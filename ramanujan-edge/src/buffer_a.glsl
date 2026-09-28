@@ -30,7 +30,7 @@ vec2 cdiv(vec2 a, vec2 b) { return vec2(a.x * b.x + a.y * b.y, a.y * b.x - a.x *
 vec2 G_T0; vec4 G_G;
 void reduceTau(vec2 tau) {
     vec4 g = vec4(1, 0, 0, 1);
-    for (int i = 0; i < 48; i++) {
+    for (int i = 0; i < 40; i++) {
         float n = floor(tau.x + 0.5);
         tau.x -= n; g.xy -= n * g.zw;
         float r2 = dot(tau, tau);
@@ -68,13 +68,17 @@ float gY;      // Im tau of the last evaluation
 // L = (6/pi^2)(1-|q|) log|P(q)| at world xz (q = x - iz); fills G_T0, G_G
 float crownL(vec2 w, float yMin) {
     float r = max(length(w), 1e-6);
-    gY = max(-log(r) / TAU, yMin);
+    float y0 = -log(r) / TAU;
+    gY = max(y0, yMin);
     reduceTau(vec2(atan(-w.y, w.x) / TAU, gY));
-    vec2 q = exp(-TAU * G_T0.y) * vec2(cos(TAU * G_T0.x), sin(TAU * G_T0.x));
-    vec2 pr = vec2(1, 0) - q, q2 = cmul(q, q);
-    pr = cmul(pr, vec2(1, 0) - q2);                  // |q0| < 0.0044: two factors suffice
-    float logEta = -PI * G_T0.y / 12.0 + 0.5 * log(dot(pr, pr)) + 0.25 * log(G_T0.y / gY);
-    return 0.6079271 * (1.0 - exp(-TAU * gY)) * (-PI * gY / 12.0 - logEta);
+    float e0 = exp(-TAU * G_T0.y);
+    vec2 q = e0 * vec2(cos(TAU * G_T0.x), sin(TAU * G_T0.x));
+    vec2 pr = cmul(vec2(1, 0) - q, vec2(1, 0) - cmul(q, q));   // |q0| < 0.0044: two factors suffice
+    float d = dot(pr, pr);
+    // log|eta(tau)| = -pi y0/12 + log|prod| + log(y0/y)/4, folded into one log
+    float logEta = -PI * G_T0.y / 12.0 + 0.25 * log(d * d * G_T0.y / gY);
+    float omr = gY > y0 ? 1.0 - exp(-TAU * gY) : 1.0 - r;     // 1-|q| (LOD-clamped)
+    return 0.6079271 * omr * (-PI * gY / 12.0 - logEta);
 }
 float heightOf(float L, float r) {
     float h = L / sqrt(abs(L) + 0.004) * smoothstep(0.0, 0.004, 1.0 - r);
@@ -86,36 +90,38 @@ vec3 sky(vec3 rd) {
     return c + GOLD * 0.25 * pow(max(dot(rd, normalize(vec3(-0.4, 0.35, 0.8))), 0.0), 12.0);
 }
 
-vec3 crown(vec2 uv, float u, vec2 pan) {
-    // camera: overhead mandala -> orbit -> look out to the golden point -> dive
+// Camera: a spherical rig (target, distance, azimuth, elevation). The right
+// vector comes from the azimuth alone, so it never flips, even looking
+// straight down. Every parameter is eased from key to key, and the user's
+// orbit fades out before the dive, so the last frame always lands exactly on
+// the first frame of the zoom.
+const float AZ_GOLD = 5.5415558;           // pi - 2 pi/phi + 2 pi: screen-up = disk centre
+void crownRig(float u, vec2 pan, out vec3 ro, out vec3 fw, out vec3 rt, out vec3 up) {
     float gA = TAU / PHI;
     vec3 gp = vec3(cos(gA), 0.0, -sin(gA));
-    float a = ease((u - 2.5) / 6.5);
-    float ang = 0.9 + 0.07 * u + 0.8 * a, el = mix(1.5, 0.4, a), dist = mix(2.45, 2.05, a);
-    vec3 ro = dist * vec3(cos(el) * cos(ang), sin(el), cos(el) * sin(ang));
-    vec3 ta = vec3(0.0, -0.08 * a, 0.0);
-    float b = ease((u - 10.0) / 5.5), f = ease((u - 13.0) / 5.0);
-    ro = mix(ro, gp * mix(-0.05, 0.42, f) + vec3(gp.z, 0.0, -gp.x) * 0.1 + vec3(0.0, mix(0.62, 0.32, f), 0.0), b);
-    ta = mix(ta, gp * 1.1 + vec3(0.0, 0.02, 0.0), ease((u - 9.0) / 4.5));
-    float c = ease((u - 17.0) / 4.0);
-    ro = mix(ro, gp + vec3(0.0, diveH(max(u, 18.5)), 0.0), c);
+    float a = ease((u - 2.5) / 6.5);            // tilt out of the overhead view
+    float b = ease((u - 9.0) / 8.0);            // swing round to face the golden point
+    float c = ease((u - 17.0) / 4.0);           // pitch down and dive
+    float az = mix(0.9 + 0.07 * u + 0.8 * a, AZ_GOLD, b);
+    float el = mix(mix(1.5, 0.4, a), 1.5707963, c);
+    float D = mix(mix(2.45, 2.05, a), 0.75, ease((u - 10.0) / 7.0));
+    D = mix(D, diveH(18.5 + 0.5 * log(1.0 + exp(2.0 * (u - 18.5)))), c);   // soft start of the fall
+    vec3 ta = mix(vec3(0.0, -0.08 * a, 0.0), gp * 1.1 + vec3(0.0, 0.02, 0.0), ease((u - 9.0) / 5.0));
     ta = mix(ta, gp, c);
-    vec3 up = normalize(mix(vec3(0, 1, 0), -gp, smoothstep(0.3, 0.8, c)));
-    gH = 0.34 * (1.0 - smoothstep(18.0, 22.5, u));
-    // user orbit about the target: yaw around the vertical, then pitch
-    float yaw = -2.2 * pan.x, cy = cos(yaw), sy = sin(yaw);
-    mat2 R = mat2(cy, sy, -sy, cy);
-    vec3 d0 = ro - ta;
-    d0.xz = R * d0.xz; up.xz = R * up.xz;
-    float len = length(d0);
-    float el0 = asin(clamp(d0.y / len, -1.0, 1.0));
-    float el1 = clamp(el0 + 1.4 * pan.y, 0.06, 1.55);
-    vec2 hz = normalize(d0.xz + 1e-6) * cos(el1) * len;
-    ro = ta + vec3(hz.x, sin(el1) * len, hz.y);
+    float w = 1.0 - ease((u - 14.0) / 3.0);     // user orbit fades before the dive
+    az -= 2.2 * pan.x * w;
+    el = clamp(el + 1.4 * pan.y * w, 0.05, 1.5707963);
+    vec3 d = vec3(cos(el) * cos(az), sin(el), cos(el) * sin(az));
+    ro = ta + D * d;
+    fw = -d;
+    rt = vec3(-sin(az), 0.0, cos(az));
+    up = cross(rt, fw);
+}
 
-    vec3 fw = normalize(ta - ro);
-    if (abs(dot(fw, up)) > 0.999) up = vec3(0, 0, 1);
-    vec3 rt = normalize(cross(fw, up)), uw = cross(rt, fw);
+vec3 crown(vec2 uv, float u, vec2 pan) {
+    vec3 ro, fw, rt, uw;
+    crownRig(u, pan, ro, fw, rt, uw);
+    gH = 0.34 * (1.0 - smoothstep(18.0, 22.5, u));
     vec3 rd = normalize(uv.x * rt + uv.y * uw + 1.6 * fw);
     float pixAng = PX / 1.6;
     vec3 col = sky(rd);
@@ -133,30 +139,46 @@ vec3 crown(vec2 uv, float u, vec2 pan) {
     float disc = B * B - A * C;
     if (A > 1e-8) {
         if (disc < 0.0) tmax = -1.0;
-        else { tmin = (-B - sqrt(disc)) / A; tmax = (-B + sqrt(disc)) / A; }
+        else { float sq = sqrt(disc); tmin = (-B - sq) / A; tmax = (-B + sq) / A; }
     }
     float s0 = (-0.12 * gH - 1e-3 - ro.y) / rd.y, s1 = (1.05 * gH + 1e-3 - ro.y) / rd.y;
     tmin = max(max(tmin, min(s0, s1)), 0.0);
     tmax = min(tmax, max(s0, s1));
 
-    // one loop does both the march and the bisection (one crownL call site)
-    bool hit = false, wall = false, refine = false;
-    float t = tmin, tPrev = tmin, lo = 0.0, hi = 0.0, L = 0.0, yMin = 0.0;
-    int nr = 0;
+    // One loop, one crownL call site: phase 0 marches, 1 bisects the crossing,
+    // 2 and 3 take the two forward-difference samples for the normal.
+    int phase = 0, nr = 0;
+    bool hit = false, wall = false;
+    float t = tmin, tPrev = tmin, lo = 0.0, hi = 0.0, yMin = 0.0, e = 0.0, h0 = 0.0;
+    float L = 0.0, y = 0.0, k = 1.0;
+    vec2 t0 = vec2(0.0), hd = vec2(0.0);
     vec3 p = ro;
-    if (tmin < tmax) for (int i = 0; i < 200; i++) {
-        float tt = refine ? 0.5 * (lo + hi) : t;
-        p = ro + rd * tt;
-        if (!refine) yMin = 1.2 * tt * pixAng / TAU;
-        float r = length(p.xz);
-        L = crownL(p.xz, yMin);
-        float d = p.y - heightOf(L, r);
-        if (refine) {
+    if (tmin < tmax) for (int i = 0; i < 180; i++) {
+        vec2 off = phase == 2 ? vec2(e, 0.0) : phase == 3 ? vec2(0.0, e) : vec2(0.0);
+        float tt = phase == 0 ? t : phase == 1 ? 0.5 * (lo + hi) : t;
+        vec3 q = ro + rd * tt;
+        if (phase == 0) yMin = 1.2 * tt * pixAng / TAU;
+        vec2 xz = q.xz + off;
+        float r = length(xz);
+        float Lq = crownL(xz, yMin);
+        float hq = heightOf(Lq, r);
+        if (phase >= 2) {                       // normal samples
+            hd += (phase == 2 ? vec2(1.0, 0.0) : vec2(0.0, 1.0)) * (hq - h0);
+            if (++phase == 4) break;
+            continue;
+        }
+        float d = q.y - hq;
+        if (phase == 1) {
             if (d < 0.0) hi = tt; else lo = tt;
-            if (++nr == 6) { t = hi; hit = true; break; }
+            if (++nr == 6) {                    // converged: keep this sample's data
+                t = hi; p = q; hit = true;
+                L = Lq; y = gY; t0 = G_T0; k = abs(G_G.z); h0 = hq;
+                e = max(1.5 * t * pixAng, 1e-4);
+                phase = 2;
+            }
         } else if (d < 0.0) {
-            if (i == 0 && r > 0.999) { wall = true; break; }
-            refine = true; lo = tPrev; hi = t;
+            if (i == 0 && r > 0.999) { wall = true; p = q; break; }
+            phase = 1; lo = tPrev; hi = t;
         } else {
             tPrev = t;
             t += max(d * 0.45 * mix(0.25, 1.0, smoothstep(0.02, 0.25, 1.0 - r)), 0.6 * tt * pixAng);
@@ -167,25 +189,19 @@ vec3 crown(vec2 uv, float u, vec2 pan) {
     if (wall) {
         col = vec3(0.02, 0.015, 0.03) + GOLD * (0.08 + 0.5 * pow(clamp(p.y / max(gH, 1e-3), 0.0, 1.0), 6.0));
     } else if (hit) {
-        float fp = t * pixAng, r = length(p.xz), y = gY;
-        vec2 t0 = G_T0; float k = abs(G_G.z);
-        float h0 = heightOf(L, r);
-        // forward-difference normal (one more call site)
-        float e = max(1.5 * fp, 1e-4);
-        vec2 hd;
-        for (int j = 0; j < 2; j++) {
-            vec2 o = j == 0 ? vec2(e, 0.0) : vec2(0.0, e);
-            hd[j] = heightOf(crownL(p.xz + o, yMin), length(p.xz + o)) - h0;
-        }
+        float fp = t * pixAng, r = length(p.xz);
         vec3 nor = normalize(vec3(-hd.x, e, -hd.y));
         vec3 kc = cuspColor(k);
         float lobe = smoothstep(-0.002, 0.02, L);
         vec3 alb = mix(vec3(0.016, 0.018, 0.05) + kc * 0.07, kc * 0.55, lobe);
-        vec3 ld = normalize(vec3(-0.4, 0.75, 0.55));
+        vec3 ld = vec3(-0.3950918, 0.7407972, 0.5432512);
         vec3 cc = alb * (0.08 + 0.95 * max(dot(nor, ld), 0.0));
         cc += mix(vec3(0.25, 0.3, 0.5), kc, lobe) * pow(max(dot(nor, normalize(ld - rd)), 0.0), mix(24.0, 80.0, lobe)) * mix(0.25, 1.0, lobe);
-        cc += sky(reflect(rd, nor)) * pow(1.0 - max(dot(nor, -rd), 0.0), 4.0) * 1.5;
-        cc += kc * 1.8 * pow(clamp(L * k * k, 0.0, 1.0), 5.0) * lobe;          // glowing tips
+        float fr = 1.0 - max(dot(nor, -rd), 0.0);
+        fr *= fr;
+        cc += sky(reflect(rd, nor)) * fr * fr * 1.5;
+        float tip = clamp(L * k * k, 0.0, 1.0), tip2 = tip * tip;
+        cc += kc * 1.8 * tip2 * tip2 * tip * lobe;                              // glowing tips
         float cell = TAU * r * y;                                               // one hyperbolic unit
         cc += mix(GOLD, kc, 0.3) * 0.6 * smoothstep(1.6 * fp, 0.4 * fp, abs(length(t0) - 1.0) / t0.y * cell)
             * smoothstep(3.0 * fp, 12.0 * fp, cell * 0.3);                     // Ford-domain edges
@@ -226,7 +242,7 @@ vec3 edge(vec2 uv, float u, vec2 pan) {
         float cp = tau.y * dot(om, om) / (PX * Sf);     // pixels per hyperbolic unit
         float Z = cp * sqrt(max(G_T0.y / lobeY - 1.0, 0.0));
         if (s == 0) { t0 = G_T0; k = abs(G_G.z); cell = cp; Z0 = Z; mirror = mi; }
-        else if (abs(G_G.z) == k) gr[s - 1] = Z - Z0;
+        else if (abs(G_G.z) == k) gr += (s == 1 ? vec2(1.0, 0.0) : vec2(0.0, 1.0)) * (Z - Z0);
         if (s == 0 && (relief <= 0.0 || G_T0.y < lobeY)) break;
     }
     float y0 = t0.y;
@@ -273,19 +289,21 @@ void mainImage(out vec4 O, in vec2 fc) {
             tgt.y = clamp(tgt.y, -0.9, 0.9);
         }
     }
+    // around the dive and the hand-off the planned camera owns the view: the
+    // pan relaxes to zero there (unless you are dragging), so the frames align
+    bool dragging = iMouse.z > 0.0 && abs(iMouse.w) >= BAR_H * iResolution.y;
+    if (!dragging && T > 15.0 && T < EDGE_T + FADE) tgt *= exp(-2.5 * dt);
     pan += (tgt - pan) * (1.0 - exp(-6.0 * dt));
 
     float wc = smoothstep(0.0, 1.5, T) * (1.0 - smoothstep(EDGE_T, EDGE_T + FADE, T));
     float we = smoothstep(EDGE_T, EDGE_T + FADE, T);
     vec3 col = vec3(0.0);
     if (wc > 0.0) col += wc * crown(uv, T, pan);
-    if (we > 0.0) col += we * edge(uv, T - EDGE_T, pan);
+    if (we > 0.0) col += we * edge(uv, T - EDGE_T, pan * smoothstep(EDGE_T + FADE, EDGE_T + FADE + 1.5, T));
 
     ivec2 p = ivec2(fc);
     float a = 0.0;
-    if (p.y == 0 && p.x < 7) {
-        float v[7] = float[7](T, tgt.x, tgt.y, pan.x, pan.y, st0.x, st0.y);
-        a = v[p.x];
-    }
+    if (p.y == 0) a = p.x == 0 ? T : p.x == 1 ? tgt.x : p.x == 2 ? tgt.y : p.x == 3 ? pan.x
+                    : p.x == 4 ? pan.y : p.x == 5 ? st0.x : p.x == 6 ? st0.y : 0.0;
     O = vec4(max(col, 0.0), a);
 }

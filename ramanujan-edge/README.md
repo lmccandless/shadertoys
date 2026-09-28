@@ -13,8 +13,13 @@ exactly self-similar modular zoom at the golden point that never stops.
   pan at drag start) lives in the alpha of texels (0..6, 0).
 - **Image** (iChannel0 = Buffer A, mipmap): bloom from A's mip chain, ACES, vignette, dither, timeline bar.
 
-Kept small for compile time: no Common, no arrays or text. The modular reduction is inlined
-at only three call sites: the ray-march and its bisection share one loop, and the normal
-and the zoom's three samples are loops too.
+Kept small for compile time: no Common, no arrays, no dynamic vector indexing, no text.
+The modular reduction is inlined at only two call sites (the crown's march, bisection and
+normal samples are one state-machine loop; the zoom's three samples are one loop).
+
+The crown camera is a spherical rig (target, distance, azimuth, elevation) with the right
+vector taken from the azimuth, so it cannot flip when looking straight down. Your orbit
+fades out before the dive and relaxes to zero, so the hand-off to the zoom is exact; panning
+eases back in once the cross-fade is over.
 
 `node tools/build.mjs` writes `ramanujan-edge.json` and `viewer.html`.
