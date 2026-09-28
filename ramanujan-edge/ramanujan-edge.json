@@ -1,0 +1,81 @@
+{
+  "ver": "0.1",
+  "info": {
+    "id": "",
+    "date": "0",
+    "viewed": 0,
+    "name": "Ramanujan: The Crown and the Edge",
+    "description": "The Hardy-Ramanujan circle method as a 3D crown of singularities over the unit disk, diving into an endless, exactly self-similar modular zoom at the golden point e^(2 pi i/phi). Drag horizontally to scrub.",
+    "likes": 0,
+    "published": "Private",
+    "usePreview": 0,
+    "tags": [
+      "ramanujan",
+      "modular",
+      "fordcircles",
+      "infinitezoom",
+      "raymarching"
+    ],
+    "hasliked": 0,
+    "parentid": "",
+    "parentname": ""
+  },
+  "renderpass": [
+    {
+      "inputs": [
+        {
+          "id": "4dXGR8",
+          "filepath": "/media/previz/buffer00.png",
+          "type": "buffer",
+          "channel": 0,
+          "sampler": {
+            "filter": "nearest",
+            "wrap": "clamp",
+            "vflip": "true",
+            "srgb": "false",
+            "internal": "byte"
+          },
+          "published": 1
+        }
+      ],
+      "outputs": [
+        {
+          "id": "4dXGR8",
+          "channel": 0
+        }
+      ],
+      "code": "// RAMANUJAN: THE CROWN AND THE EDGE (lite)\n// ----------------------------------------------------------------------------\n// 0-24 s   the circle method: (1-|q|) log|P(q)| over the unit disk, where\n//          P(q) = sum p(n) q^n = prod 1/(1-q^n) = q^(1/24)/eta(tau).\n//          Every root of unity e^(2 pi i h/k) is a singularity; its lobe (a Ford\n//          circle) rises to 1/k. The camera dives onto the golden point.\n// 24-46 s  the edge: an endless zoom into q = e^(2 pi i/phi). M = (2 1; 1 1)\n//          fixes tau = phi and is an exact dilation in sigma = (tau-phi)/(tau+1/phi);\n//          everything drawn is SL2(Z)-invariant, so the zoom loops seamlessly\n//          and never runs out of precision.\n// Drag horizontally to scrub.\n//\n// Buffer A: scene (HDR); alpha of texel (0,0) holds the clock. iChannel0 = Buffer A (self). Kept small for fast compiles: the modular reduction is\n// inlined at three call sites only (raymarch+bisection share one loop, normals\n// and the edge's three samples are loops too).\n\nconst float PI = 3.14159265, TAU = 6.28318531, PHI = 1.61803399;\nconst float LOOP = 46.0, EDGE_T = 24.0, FADE = 2.4;\nconst vec3 GOLD = vec3(1.0, 0.66, 0.24), SAFFRON = vec3(1.0, 0.42, 0.1);\nfloat PX;\n\nfloat ease(float x) { x = clamp(x, 0.0, 1.0); return x * x * (3.0 - 2.0 * x); }\nvec2 cmul(vec2 a, vec2 b) { return vec2(a.x * b.x - a.y * b.y, a.x * b.y + a.y * b.x); }\nvec2 cdiv(vec2 a, vec2 b) { return vec2(a.x * b.x + a.y * b.y, a.y * b.x - a.x * b.y) / dot(b, b); }\n\n// ---- modular reduction: tau -> tau0 in the fundamental domain, g.tau = tau0.\n// The cusp owning tau is -d/c (k = |c|); tau is in its Ford circle iff Im tau0 >= 1.\nvec2 G_T0; vec4 G_G;\nvoid reduceTau(vec2 tau) {\n    vec4 g = vec4(1, 0, 0, 1);\n    for (int i = 0; i < 48; i++) {\n        float n = floor(tau.x + 0.5);\n        tau.x -= n; g.xy -= n * g.zw;\n        float r2 = dot(tau, tau);\n        if (r2 >= 1.0) break;\n        tau = vec2(-tau.x, tau.y) / r2;\n        g = vec4(-g.zw, g.xy);\n    }\n    G_T0 = tau; G_G = g;\n}\n\n// cusp colours cycle once per factor phi^2 in k, matching one zoom step\nvec3 cuspColor(float k) {\n    float s = fract(log(max(k, 1.0)) / 0.962424) * 5.0;\n    vec3 c = mix(GOLD * 1.1, SAFFRON, smoothstep(0.0, 1.0, s));\n    c = mix(c, vec3(0.88, 0.08, 0.13), smoothstep(1.0, 2.0, s));\n    c = mix(c, vec3(0.42, 0.1, 0.62), smoothstep(2.0, 3.0, s));\n    c = mix(c, vec3(0.05, 0.65, 0.72), smoothstep(3.0, 4.0, s));\n    return mix(c, GOLD * 1.1, smoothstep(4.0, 5.0, s));\n}\n\n// ---- shared timing: exponential dive, continued by the zoom\nconst float DIVE = 0.45, KLOG = 1.9248473;          // 4 log phi = log-zoom of one M step\nfloat diveH(float u) { return 0.62 * exp(-DIVE * (u - 18.5)); }\nfloat edgeZoom(float u) {\n    float a = clamp((u - 3.0) / 6.0, 0.0, 1.0);\n    return DIVE * u + 0.9 * (6.0 * (a * a * a - 0.5 * a * a * a * a) + max(u - 9.0, 0.0));\n}\n\n// ============================================================================\n//  the crown\n// ============================================================================\nfloat gH;      // relief scale (flattens during the dive)\nfloat gY;      // Im tau of the last evaluation\n\n// L = (6/pi^2)(1-|q|) log|P(q)| at world xz (q = x - iz); fills G_T0, G_G\nfloat crownL(vec2 w, float yMin) {\n    float r = max(length(w), 1e-6);\n    gY = max(-log(r) / TAU, yMin);\n    reduceTau(vec2(atan(-w.y, w.x) / TAU, gY));\n    vec2 q = exp(-TAU * G_T0.y) * vec2(cos(TAU * G_T0.x), sin(TAU * G_T0.x));\n    vec2 pr = vec2(1, 0) - q, q2 = cmul(q, q);\n    pr = cmul(pr, vec2(1, 0) - q2);                  // |q0| < 0.0044: two factors suffice\n    float logEta = -PI * G_T0.y / 12.0 + 0.5 * log(dot(pr, pr)) + 0.25 * log(G_T0.y / gY);\n    return 0.6079271 * (1.0 - exp(-TAU * gY)) * (-PI * gY / 12.0 - logEta);\n}\nfloat heightOf(float L, float r) {\n    float h = L / sqrt(abs(L) + 0.004) * smoothstep(0.0, 0.004, 1.0 - r);\n    return gH * (h > 0.0 ? h : 0.35 * h);\n}\n\nvec3 sky(vec3 rd) {\n    vec3 c = mix(vec3(0.012, 0.012, 0.03), vec3(0.03, 0.025, 0.07), smoothstep(-0.2, 0.6, rd.y));\n    return c + GOLD * 0.25 * pow(max(dot(rd, normalize(vec3(-0.4, 0.35, 0.8))), 0.0), 12.0);\n}\n\nvec3 crown(vec2 uv, float u) {\n    // camera: overhead mandala -> orbit -> look out to the golden point -> dive\n    float gA = TAU / PHI;\n    vec3 gp = vec3(cos(gA), 0.0, -sin(gA));\n    float a = ease((u - 2.5) / 6.5);\n    float ang = 0.9 + 0.07 * u + 0.8 * a, el = mix(1.5, 0.4, a), dist = mix(2.45, 2.05, a);\n    vec3 ro = dist * vec3(cos(el) * cos(ang), sin(el), cos(el) * sin(ang));\n    vec3 ta = vec3(0.0, -0.08 * a, 0.0);\n    float b = ease((u - 10.0) / 5.5), f = ease((u - 13.0) / 5.0);\n    ro = mix(ro, gp * mix(-0.05, 0.42, f) + vec3(gp.z, 0.0, -gp.x) * 0.1 + vec3(0.0, mix(0.62, 0.32, f), 0.0), b);\n    ta = mix(ta, gp * 1.1 + vec3(0.0, 0.02, 0.0), ease((u - 9.0) / 4.5));\n    float c = ease((u - 17.0) / 4.0);\n    ro = mix(ro, gp + vec3(0.0, diveH(max(u, 18.5)), 0.0), c);\n    ta = mix(ta, gp, c);\n    vec3 up = normalize(mix(vec3(0, 1, 0), -gp, smoothstep(0.3, 0.8, c)));\n    gH = 0.34 * (1.0 - smoothstep(18.0, 22.5, u));\n\n    vec3 fw = normalize(ta - ro);\n    if (abs(dot(fw, up)) > 0.999) up = vec3(0, 0, 1);\n    vec3 rt = normalize(cross(fw, up)), uw = cross(rt, fw);\n    vec3 rd = normalize(uv.x * rt + uv.y * uw + 1.6 * fw);\n    float pixAng = PX / 1.6;\n    vec3 col = sky(rd);\n\n    // dark floor beyond the rim\n    float tf = (-0.02 - ro.y) / rd.y;\n    if (tf > 0.0) {\n        float rr = length((ro + rd * tf).xz);\n        if (rr > 1.0) col = mix(vec3(0.004, 0.004, 0.01) + GOLD * 0.05 * exp(-(rr - 1.0) * 25.0), col, smoothstep(2.0, 6.0, tf));\n    }\n\n    // bounds: cylinder r <= 1 and slab of the relief\n    float tmin = -1e9, tmax = 1e9;\n    float A = dot(rd.xz, rd.xz), B = dot(ro.xz, rd.xz), C = dot(ro.xz, ro.xz) - 1.0;\n    float disc = B * B - A * C;\n    if (A > 1e-8) {\n        if (disc < 0.0) tmax = -1.0;\n        else { tmin = (-B - sqrt(disc)) / A; tmax = (-B + sqrt(disc)) / A; }\n    }\n    float s0 = (-0.12 * gH - 1e-3 - ro.y) / rd.y, s1 = (1.05 * gH + 1e-3 - ro.y) / rd.y;\n    tmin = max(max(tmin, min(s0, s1)), 0.0);\n    tmax = min(tmax, max(s0, s1));\n\n    // one loop does both the march and the bisection (one crownL call site)\n    bool hit = false, wall = false, refine = false;\n    float t = tmin, tPrev = tmin, lo = 0.0, hi = 0.0, L = 0.0, yMin = 0.0;\n    int nr = 0;\n    vec3 p = ro;\n    if (tmin < tmax) for (int i = 0; i < 200; i++) {\n        float tt = refine ? 0.5 * (lo + hi) : t;\n        p = ro + rd * tt;\n        if (!refine) yMin = 1.2 * tt * pixAng / TAU;\n        float r = length(p.xz);\n        L = crownL(p.xz, yMin);\n        float d = p.y - heightOf(L, r);\n        if (refine) {\n            if (d < 0.0) hi = tt; else lo = tt;\n            if (++nr == 6) { t = hi; hit = true; break; }\n        } else if (d < 0.0) {\n            if (i == 0 && r > 0.999) { wall = true; break; }\n            refine = true; lo = tPrev; hi = t;\n        } else {\n            tPrev = t;\n            t += max(d * 0.45 * mix(0.25, 1.0, smoothstep(0.02, 0.25, 1.0 - r)), 0.6 * tt * pixAng);\n            if (t > tmax) break;\n        }\n    }\n\n    if (wall) {\n        col = vec3(0.02, 0.015, 0.03) + GOLD * (0.08 + 0.5 * pow(clamp(p.y / max(gH, 1e-3), 0.0, 1.0), 6.0));\n    } else if (hit) {\n        float fp = t * pixAng, r = length(p.xz), y = gY;\n        vec2 t0 = G_T0; float k = abs(G_G.z);\n        float h0 = heightOf(L, r);\n        // forward-difference normal (one more call site)\n        float e = max(1.5 * fp, 1e-4);\n        vec2 hd;\n        for (int j = 0; j < 2; j++) {\n            vec2 o = j == 0 ? vec2(e, 0.0) : vec2(0.0, e);\n            hd[j] = heightOf(crownL(p.xz + o, yMin), length(p.xz + o)) - h0;\n        }\n        vec3 nor = normalize(vec3(-hd.x, e, -hd.y));\n        vec3 kc = cuspColor(k);\n        float lobe = smoothstep(-0.002, 0.02, L);\n        vec3 alb = mix(vec3(0.016, 0.018, 0.05) + kc * 0.07, kc * 0.55, lobe);\n        vec3 ld = normalize(vec3(-0.4, 0.75, 0.55));\n        vec3 cc = alb * (0.08 + 0.95 * max(dot(nor, ld), 0.0));\n        cc += mix(vec3(0.25, 0.3, 0.5), kc, lobe) * pow(max(dot(nor, normalize(ld - rd)), 0.0), mix(24.0, 80.0, lobe)) * mix(0.25, 1.0, lobe);\n        cc += sky(reflect(rd, nor)) * pow(1.0 - max(dot(nor, -rd), 0.0), 4.0) * 1.5;\n        cc += kc * 1.8 * pow(clamp(L * k * k, 0.0, 1.0), 5.0) * lobe;          // glowing tips\n        float cell = TAU * r * y;                                               // one hyperbolic unit\n        cc += mix(GOLD, kc, 0.3) * 0.6 * smoothstep(1.6 * fp, 0.4 * fp, abs(length(t0) - 1.0) / t0.y * cell)\n            * smoothstep(3.0 * fp, 12.0 * fp, cell * 0.3);                     // Ford-domain edges\n        float lj = log2(max(t0.y, 1e-6));\n        cc += kc * 0.35 * smoothstep(1.4 * fp, 0.3 * fp, abs(lj - floor(lj + 0.5)) * 0.693 * cell)\n            * smoothstep(4.0 * fp, 16.0 * fp, cell * 0.69) * step(1.0, t0.y) * lobe;   // horocycles\n        cc += kc * 0.05 * (1.0 - lobe);\n        col = mix(cc, col, smoothstep(3.0, 7.0, t));\n    }\n    // the unit circle\n    float tc = -ro.y / rd.y;\n    if (tc > 0.0 && (!hit || tc < t + 0.02))\n        col += GOLD * 0.9 * smoothstep(2.0 * tc * pixAng, 0.3 * tc * pixAng, abs(length((ro + rd * tc).xz) - 1.0));\n    return col;\n}\n\n// ============================================================================\n//  the edge\n// ============================================================================\nvec3 edge(vec2 uv, float u) {\n    float z = edgeZoom(u);\n    float Sf = diveH(24.0) / (TAU * 1.6) * exp(-fract(z / KLOG) * KLOG);\n    float lobeY = mix(8.7, 1.0, ease((u - 2.0) / 4.5));\n    float relief = ease((u - 3.0) / 4.0);\n\n    // three samples (pixel, +x, +y) in one loop; sample 0 is kept for shading\n    vec2 t0 = vec2(0.0); float k = 1.0, cell = 1.0, Z0 = 0.0; vec2 gr = vec2(0.0);\n    bool mirror = false;\n    for (int s = 0; s < 3; s++) {\n        vec2 o = s == 0 ? vec2(0.0) : s == 1 ? vec2(PX, 0.0) : vec2(0.0, PX);\n        vec2 sig = (uv + o) * Sf / sqrt(5.0);\n        vec2 om = vec2(1, 0) - sig;\n        vec2 d = cdiv(sig * sqrt(5.0), om);            // tau - phi\n        bool mi = d.y < 0.0;\n        vec2 tau = vec2(PHI - 2.0 + d.x, max(abs(d.y), 1e-9));\n        reduceTau(tau);\n        float cp = tau.y * dot(om, om) / (PX * Sf);     // pixels per hyperbolic unit\n        float Z = cp * sqrt(max(G_T0.y / lobeY - 1.0, 0.0));\n        if (s == 0) { t0 = G_T0; k = abs(G_G.z); cell = cp; Z0 = Z; mirror = mi; }\n        else if (abs(G_G.z) == k) gr[s - 1] = Z - Z0;\n        if (s == 0 && (relief <= 0.0 || G_T0.y < lobeY)) break;\n    }\n    float y0 = t0.y;\n    vec3 kc = cuspColor(k);\n    float lobe = smoothstep(-0.8, 0.8, log(y0 / lobeY) * cell);\n    vec3 nor = normalize(vec3(-gr * (mirror ? vec2(1, -1) : vec2(1)) * relief * 0.9, 1.0));\n\n    vec3 alb = mix(vec3(0.016, 0.018, 0.05) + kc * 0.07, kc * 0.55, lobe);\n    vec3 ld = normalize(vec3(-0.45, 0.55, 0.7));\n    vec3 c = alb * (0.08 + 0.95 * max(dot(nor, ld), 0.0)) * mix(1.0, 1.25, relief * lobe);\n    c += mix(vec3(0.25, 0.3, 0.5), kc, lobe) * pow(max(dot(nor, normalize(ld + vec3(0, 0, 1))), 0.0), mix(24.0, 80.0, lobe))\n       * mix(0.25, 1.0, lobe) * mix(0.35, 1.0, relief);\n    c += kc * 0.5 * pow(1.0 - nor.z, 2.0) * lobe * relief;                    // rim light on domes\n    c += kc * 1.8 * pow(clamp(1.0 - lobeY / y0, 0.0, 1.0), 5.0) * lobe;       // glow at the cusps\n    c += mix(GOLD, kc, 0.3) * 0.6 * smoothstep(1.6, 0.4, abs(length(t0) - 1.0) / y0 * cell) * smoothstep(3.0, 12.0, cell * 0.3);\n    float lj = log2(y0);\n    c += kc * 0.35 * smoothstep(1.4, 0.3, abs(lj - floor(lj + 0.5)) * 0.693 * cell) * smoothstep(4.0, 16.0, cell * 0.69) * step(1.0, y0) * lobe;\n    c += kc * 0.05 * (1.0 - lobe);\n    c = mix(mix(GOLD, SAFFRON, 0.4) * 0.35, c, smoothstep(0.6, 3.0, cell));  // sub-pixel haze\n    if (mirror) c *= 0.16 * smoothstep(1.0, 4.0, u) * exp(-abs(uv.y) * 3.0);\n    float dl = abs(uv.y) / PX;\n    return c + GOLD * (1.1 * smoothstep(1.6, 0.3, dl) + 0.25 * exp(-dl * 0.08));\n}\n\nvoid mainImage(out vec4 O, in vec2 fc) {\n    PX = 1.0 / iResolution.y;\n    vec2 uv = (fc - 0.5 * iResolution.xy) * PX;\n    // the clock lives in the alpha of texel (0,0), so scrubbing sticks\n    float T = iFrame == 0 ? 0.0 : texelFetch(iChannel0, ivec2(0), 0).a + clamp(iTimeDelta, 0.0, 0.1);\n    if (iMouse.z > 0.0) T = clamp(iMouse.x / iResolution.x, 0.0, 0.9999) * LOOP;\n    T = mod(T, LOOP);\n    float wc = smoothstep(0.0, 1.5, T) * (1.0 - smoothstep(EDGE_T, EDGE_T + FADE, T));\n    float we = smoothstep(EDGE_T, EDGE_T + FADE, T) * (1.0 - smoothstep(LOOP - 2.0, LOOP - 0.1, T));\n    vec3 col = vec3(0.0);\n    if (wc > 0.0) col += wc * crown(uv, T);\n    if (we > 0.0) col += we * edge(uv, T - EDGE_T);\n    O = vec4(max(col, 0.0), T);\n}\n",
+      "name": "Buffer A",
+      "description": "",
+      "type": "buffer"
+    },
+    {
+      "inputs": [
+        {
+          "id": "4dXGR8",
+          "filepath": "/media/previz/buffer00.png",
+          "type": "buffer",
+          "channel": 0,
+          "sampler": {
+            "filter": "mipmap",
+            "wrap": "clamp",
+            "vflip": "true",
+            "srgb": "false",
+            "internal": "byte"
+          },
+          "published": 1
+        }
+      ],
+      "outputs": [
+        {
+          "id": "4dfGRr",
+          "channel": 0
+        }
+      ],
+      "code": "// Image: bloom straight from Buffer A's mip chain, ACES tone map, vignette, dither.\n// iChannel0 = Buffer A (mipmap)\n\nvec3 aces(vec3 x) { return clamp((x * (2.51 * x + 0.03)) / (x * (2.43 * x + 0.59) + 0.14), 0.0, 1.0); }\n\nvoid mainImage(out vec4 O, in vec2 fc) {\n    vec2 uv = fc / iResolution.xy;\n    vec3 c = textureLod(iChannel0, uv, 0.0).rgb;\n    vec3 bloom = vec3(0.0);\n    for (int l = 1; l <= 6; l++) {\n        float lod = float(l);\n        vec2 o = exp2(lod) / iResolution.xy;\n        vec3 s = textureLod(iChannel0, uv + vec2(o.x, o.y) * 0.5, lod).rgb + textureLod(iChannel0, uv - vec2(o.x, o.y) * 0.5, lod).rgb\n               + textureLod(iChannel0, uv + vec2(o.x, -o.y) * 0.5, lod).rgb + textureLod(iChannel0, uv - vec2(o.x, -o.y) * 0.5, lod).rgb;\n        bloom += s * 0.25 / (1.0 + 0.35 * lod);\n    }\n    c += 0.28 * max(bloom / 3.3 - 0.02, 0.0);\n    float l = dot(c, vec3(0.2126, 0.7152, 0.0722));\n    c = aces(mix(vec3(l), c, 1.15));\n    vec2 q = uv - 0.5;\n    c *= 1.0 - 0.55 * dot(q * vec2(1.1, 1.3), q * vec2(1.1, 1.3));\n    c = pow(c, vec3(1.0 / 2.2));\n    c += (fract(sin(dot(fc + float(iFrame), vec2(12.9898, 78.233))) * 43758.5453) - 0.5) / 255.0;\n    O = vec4(c, 1.0);\n}\n",
+      "name": "Image",
+      "description": "",
+      "type": "image"
+    }
+  ]
+}
