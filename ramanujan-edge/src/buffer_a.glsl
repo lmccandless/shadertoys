@@ -4,18 +4,20 @@
 //          P(q) = sum p(n) q^n = prod 1/(1-q^n) = q^(1/24)/eta(tau).
 //          Every root of unity e^(2 pi i h/k) is a singularity; its lobe (a Ford
 //          circle) rises to 1/k. The camera dives onto the golden point.
-// 24-46 s  the edge: an endless zoom into q = e^(2 pi i/phi). M = (2 1; 1 1)
+// 24 s ->  the edge: an endless zoom into q = e^(2 pi i/phi). M = (2 1; 1 1)
 //          fixes tau = phi and is an exact dilation in sigma = (tau-phi)/(tau+1/phi);
 //          everything drawn is SL2(Z)-invariant, so the zoom loops seamlessly
 //          and never runs out of precision.
-// Drag horizontally to scrub.
+// Drag in the bar at the bottom to scrub; drag anywhere else to pan/orbit.
 //
-// Buffer A: scene (HDR); alpha of texel (0,0) holds the clock. iChannel0 = Buffer A (self). Kept small for fast compiles: the modular reduction is
+// Buffer A: scene (HDR). State lives in the alpha of texels (0..5, 0):
+//   0 clock, 1-2 pan target, 3-4 smoothed pan, 5-6 pan at drag start.
+// iChannel0 = Buffer A (self). Kept small for fast compiles: the modular reduction is
 // inlined at three call sites only (raymarch+bisection share one loop, normals
 // and the edge's three samples are loops too).
 
 const float PI = 3.14159265, TAU = 6.28318531, PHI = 1.61803399;
-const float LOOP = 46.0, EDGE_T = 24.0, FADE = 2.4;
+const float BAR_T = 46.0, EDGE_T = 24.0, FADE = 2.4, BAR_H = 0.045;
 const vec3 GOLD = vec3(1.0, 0.66, 0.24), SAFFRON = vec3(1.0, 0.42, 0.1);
 float PX;
 
@@ -84,7 +86,7 @@ vec3 sky(vec3 rd) {
     return c + GOLD * 0.25 * pow(max(dot(rd, normalize(vec3(-0.4, 0.35, 0.8))), 0.0), 12.0);
 }
 
-vec3 crown(vec2 uv, float u) {
+vec3 crown(vec2 uv, float u, vec2 pan) {
     // camera: overhead mandala -> orbit -> look out to the golden point -> dive
     float gA = TAU / PHI;
     vec3 gp = vec3(cos(gA), 0.0, -sin(gA));
@@ -100,6 +102,16 @@ vec3 crown(vec2 uv, float u) {
     ta = mix(ta, gp, c);
     vec3 up = normalize(mix(vec3(0, 1, 0), -gp, smoothstep(0.3, 0.8, c)));
     gH = 0.34 * (1.0 - smoothstep(18.0, 22.5, u));
+    // user orbit about the target: yaw around the vertical, then pitch
+    float yaw = -2.2 * pan.x, cy = cos(yaw), sy = sin(yaw);
+    mat2 R = mat2(cy, sy, -sy, cy);
+    vec3 d0 = ro - ta;
+    d0.xz = R * d0.xz; up.xz = R * up.xz;
+    float len = length(d0);
+    float el0 = asin(clamp(d0.y / len, -1.0, 1.0));
+    float el1 = clamp(el0 + 1.4 * pan.y, 0.06, 1.55);
+    vec2 hz = normalize(d0.xz + 1e-6) * cos(el1) * len;
+    ro = ta + vec3(hz.x, sin(el1) * len, hz.y);
 
     vec3 fw = normalize(ta - ro);
     if (abs(dot(fw, up)) > 0.999) up = vec3(0, 0, 1);
@@ -193,7 +205,8 @@ vec3 crown(vec2 uv, float u) {
 // ============================================================================
 //  the edge
 // ============================================================================
-vec3 edge(vec2 uv, float u) {
+vec3 edge(vec2 uv, float u, vec2 pan) {
+    uv += pan * vec2(1.0, 0.6);
     float z = edgeZoom(u);
     float Sf = diveH(24.0) / (TAU * 1.6) * exp(-fract(z / KLOG) * KLOG);
     float lobeY = mix(8.7, 1.0, ease((u - 2.0) / 4.5));
@@ -238,17 +251,41 @@ vec3 edge(vec2 uv, float u) {
     return c + GOLD * (1.1 * smoothstep(1.6, 0.3, dl) + 0.25 * exp(-dl * 0.08));
 }
 
+float state(int i) { return texelFetch(iChannel0, ivec2(i, 0), 0).a; }
+
 void mainImage(out vec4 O, in vec2 fc) {
     PX = 1.0 / iResolution.y;
     vec2 uv = (fc - 0.5 * iResolution.xy) * PX;
-    // the clock lives in the alpha of texel (0,0), so scrubbing sticks
-    float T = iFrame == 0 ? 0.0 : texelFetch(iChannel0, ivec2(0), 0).a + clamp(iTimeDelta, 0.0, 0.1);
-    if (iMouse.z > 0.0) T = clamp(iMouse.x / iResolution.x, 0.0, 0.9999) * LOOP;
-    T = mod(T, LOOP);
+
+    // ---- state: clock (never loops: the zoom is endless), pan with easing
+    bool init = iFrame == 0;
+    float dt = clamp(iTimeDelta, 0.0, 0.1);
+    float T = init ? 0.0 : state(0) + dt;
+    vec2 tgt = init ? vec2(0.0) : vec2(state(1), state(2));
+    vec2 pan = init ? vec2(0.0) : vec2(state(3), state(4));
+    vec2 st0 = init ? vec2(0.0) : vec2(state(5), state(6));
+    if (iMouse.z > 0.0) {
+        bool onBar = abs(iMouse.w) < BAR_H * iResolution.y;
+        if (onBar) T = clamp(iMouse.x / iResolution.x, 0.0, 1.0) * BAR_T;
+        else {
+            if (iMouse.w > 0.0) st0 = tgt;                  // press: remember where we were
+            tgt = st0 - (iMouse.xy - iMouse.zw * sign(iMouse.zw)) * PX;
+            tgt.y = clamp(tgt.y, -0.9, 0.9);
+        }
+    }
+    pan += (tgt - pan) * (1.0 - exp(-6.0 * dt));
+
     float wc = smoothstep(0.0, 1.5, T) * (1.0 - smoothstep(EDGE_T, EDGE_T + FADE, T));
-    float we = smoothstep(EDGE_T, EDGE_T + FADE, T) * (1.0 - smoothstep(LOOP - 2.0, LOOP - 0.1, T));
+    float we = smoothstep(EDGE_T, EDGE_T + FADE, T);
     vec3 col = vec3(0.0);
-    if (wc > 0.0) col += wc * crown(uv, T);
-    if (we > 0.0) col += we * edge(uv, T - EDGE_T);
-    O = vec4(max(col, 0.0), T);
+    if (wc > 0.0) col += wc * crown(uv, T, pan);
+    if (we > 0.0) col += we * edge(uv, T - EDGE_T, pan);
+
+    ivec2 p = ivec2(fc);
+    float a = 0.0;
+    if (p.y == 0 && p.x < 7) {
+        float v[7] = float[7](T, tgt.x, tgt.y, pan.x, pan.y, st0.x, st0.y);
+        a = v[p.x];
+    }
+    O = vec4(max(col, 0.0), a);
 }

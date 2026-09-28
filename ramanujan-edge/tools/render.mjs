@@ -26,7 +26,7 @@ for (let i = 0; i < args.length; i++) {
   else if (a === '--dt') opt.dt = +v, i++;
 }
 const common = fs.readFileSync(path.join(root, 'src/buffer_a.glsl'), 'utf8');
-const T_TOTAL = +(/LOOP = ([\d.]+)/.exec(common) || [0, 0])[1];
+const T_TOTAL = +(/BAR_T = ([\d.]+)/.exec(common) || [0, 0])[1];
 
 const browser = await chromium.launch({ args: ['--use-angle=swiftshader', '--enable-unsafe-swiftshader', '--ignore-gpu-blocklist'] });
 const page = await browser.newPage({ viewport: { width: opt.w, height: opt.h } });
@@ -48,9 +48,9 @@ for (const t of opt.times) {
   const t1 = Date.now();
   const x = Math.min(opt.w - 0.5, (t / T_TOTAL) * opt.w);
   await page.evaluate(([x, h, dt, settle]) => {
-    ST.setMouse(x, h * 0.5, true);
+    ST.setMouse(x, 3, true);
     ST.renderFrames(1, dt);
-    ST.setMouse(x, h * 0.5, false);
+    ST.setMouse(x, 3, false);
     ST.renderFrames(settle, dt);
   }, [x, opt.h, opt.dt, opt.settle]);
   const url = await page.evaluate(() => document.getElementById('c').toDataURL('image/png'));
