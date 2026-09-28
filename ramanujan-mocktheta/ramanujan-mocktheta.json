@@ -1,0 +1,103 @@
+{
+  "ver": "0.1",
+  "info": {
+    "id": "",
+    "date": "0",
+    "viewed": 0,
+    "name": "Ramanujan's Mock Theta Function",
+    "description": "The third-order mock theta function f(q) from Ramanujan's last letter (1920). Rays show where it erupts at roots of unity of even order; slide to f-b or f+b and a theta function cancels one family, never both.",
+    "likes": 0,
+    "published": "Private",
+    "usePreview": 0,
+    "tags": [
+      "ramanujan",
+      "mocktheta",
+      "modular",
+      "domaincoloring",
+      "interactive"
+    ],
+    "hasliked": 0,
+    "parentid": "",
+    "parentname": ""
+  },
+  "renderpass": [
+    {
+      "inputs": [],
+      "outputs": [],
+      "code": "// RAMANUJAN'S MOCK THETA FUNCTION (interactive)\n// f(q) = 1 + q/(1+q)^2 + q^4/((1+q)^2(1+q^2)^2) + ...   (last letter, 1920)\n// It erupts at every root of unity of even order 2k. Near each one,\n// f(q) - (-1)^k b(q) stays bounded, b a theta function. So f - b tames the\n// orders 4, 8, 12, ... and f + b tames 2, 6, 10, ...: every eruption is\n// copied by a modular form, but no single one copies them all.\n\n// sliders, in screen-height units from the centre\nconst float SX0 = -0.80, SX1 = -0.30, SY_S = -0.14, SY_R = -0.28, S_HIT = 0.045;\nconst float R_MIN = 0.95, R_MAX = 0.996;\n",
+      "name": "Common",
+      "description": "",
+      "type": "common"
+    },
+    {
+      "inputs": [
+        {
+          "id": "4dXGR8",
+          "filepath": "/media/previz/buffer00.png",
+          "type": "buffer",
+          "channel": 0,
+          "sampler": {
+            "filter": "nearest",
+            "wrap": "clamp",
+            "vflip": "true",
+            "srgb": "false",
+            "internal": "byte"
+          },
+          "published": 1
+        }
+      ],
+      "outputs": [
+        {
+          "id": "4dXGR8",
+          "channel": 0
+        }
+      ],
+      "code": "// Buffer A — UI state only (texels 0..7 of row 0).  iChannel0 = Buffer A (self)\n//  0 morph target, 1 morph eased (-1 = f+b, 0 = f, 1 = f-b)\n//  2 rim depth target, 3 eased, 4 turn target, 5 turn eased,\n//  6 active control (0 none, 1 morph, 2 depth, 3 turning), 7 turn at drag start\n\nfloat st(int i) { return texelFetch(iChannel0, ivec2(i, 0), 0).x; }\n\nvoid mainImage(out vec4 O, in vec2 fc) {\n    ivec2 p = ivec2(fc);\n    O = vec4(0.0);\n    if (p.y != 0 || p.x > 7) return;\n    bool init = iFrame == 0;\n    float ts = init ? 0.0 : st(0), cs = init ? 0.0 : st(1);\n    float tr = init ? 0.992 : st(2), cr = init ? 0.992 : st(3);\n    float ta = init ? 0.0 : st(4), ca = init ? 0.0 : st(5);\n    float act = init ? 0.0 : st(6), a0 = init ? 0.0 : st(7);\n    float px = 1.0 / iResolution.y;\n    vec2 ms = (iMouse.xy - 0.5 * iResolution.xy) * px;\n    vec2 ck = (abs(iMouse.zw) - 0.5 * iResolution.xy) * px;\n    if (iMouse.z > 0.0) {\n        if (iMouse.w > 0.0) {                       // press: pick a control\n            bool inX = ck.x > SX0 - 0.03 && ck.x < SX1 + 0.03;\n            act = inX && abs(ck.y - SY_S) < S_HIT ? 1.0 : inX && abs(ck.y - SY_R) < S_HIT ? 2.0 : 3.0;\n            a0 = ta;\n        }\n        float f = clamp((ms.x - SX0) / (SX1 - SX0), 0.0, 1.0);\n        if (act == 1.0) ts = mix(-1.0, 1.0, f);\n        if (act == 2.0) tr = mix(R_MIN, R_MAX, f);\n        if (act == 3.0) ta = a0 + (ms.x - ck.x) * 4.0;\n    } else {\n        act = 0.0;\n        ts = floor(ts + 0.5);                       // settle on f + b, f or f - b\n    }\n    float dt = clamp(iTimeDelta, 0.0, 0.1), k = 1.0 - exp(-7.0 * dt);\n    ta -= 0.03 * dt;                                // a slow drift\n    cs += (ts - cs) * k; cr += (tr - cr) * k; ca += (ta - ca) * k;\n    O.x = p.x == 0 ? ts : p.x == 1 ? cs : p.x == 2 ? tr : p.x == 3 ? cr\n        : p.x == 4 ? ta : p.x == 5 ? ca : p.x == 6 ? act : a0;\n}\n",
+      "name": "Buffer A",
+      "description": "",
+      "type": "buffer"
+    },
+    {
+      "inputs": [
+        {
+          "id": "4dXGR8",
+          "filepath": "/media/previz/buffer00.png",
+          "type": "buffer",
+          "channel": 0,
+          "sampler": {
+            "filter": "nearest",
+            "wrap": "clamp",
+            "vflip": "true",
+            "srgb": "false",
+            "internal": "byte"
+          },
+          "published": 1
+        },
+        {
+          "id": "4dXGzr",
+          "filepath": "/media/a/08b42b43ae9d3c0605da11d0eac86618ea888e62cdd9518ee8b9097488b31560.png",
+          "type": "texture",
+          "channel": 1,
+          "sampler": {
+            "filter": "linear",
+            "wrap": "clamp",
+            "vflip": "false",
+            "srgb": "false",
+            "internal": "byte"
+          },
+          "published": 1
+        }
+      ],
+      "outputs": [
+        {
+          "id": "4dfGRr",
+          "channel": 0
+        }
+      ],
+      "code": "// Image — the disk, its corona of rays, two sliders and a little text.\n// iChannel0 = Buffer A (UI state)   iChannel1 = font texture\n//\n// Compile-light: the q-series is inlined once (the ray sample and the three\n// disk samples share one loop), the modular reduction once, and text is\n// fixed-width with strings packed four characters to a uint.\n\nconst vec3 GOLD = vec3(1.0, 0.66, 0.24), IVORY = vec3(0.95, 0.88, 0.74), PEA = vec3(0.07, 0.75, 0.82);\nconst float PI = 3.14159265, TAU = 6.28318531, ADV = 0.5;\nfloat PX;\n\nfloat st(int i) { return texelFetch(iChannel0, ivec2(i, 0), 0).x; }\nvec2 cmul(vec2 a, vec2 b) { return vec2(a.x * b.x - a.y * b.y, a.x * b.y + a.y * b.x); }\nvec2 cdiv(vec2 a, vec2 b) { return vec2(a.x * b.x + a.y * b.y, a.y * b.x - a.x * b.y) / dot(b, b); }\n\n// ---- the functions ---------------------------------------------------------------\n// Watson: f = A - 2B and b = A + 2B, with A = phi(-q), B = psi(-q) (third-order\n// mock thetas). So f - s b = (1-s) A - 2(1+s) B, computed without cancellation.\n// A erupts only at orders 0 (mod 4), B only at orders 2 (mod 4).\nvec2 mockF(vec2 q, float s) {\n    vec2 one = vec2(1.0, 0.0), q2 = cmul(q, q), qp = q;\n    vec2 a = cdiv(-q, one + q2), b = -cdiv(q, one + q);\n    vec2 A = one + a, B = b;\n    for (int n = 2; n < 110; n++) {\n        qp = cmul(qp, q2);                          // q^(2n-1)\n        a = cmul(a, cdiv(-qp, one + cmul(qp, q)));\n        b = cmul(b, cdiv(-qp, one + qp));\n        A += a; B += b;\n        if (dot(qp, qp) < 1e-14 * (1.0 + dot(a, a) + dot(b, b))) break;\n    }\n    return (1.0 - s) * A - 2.0 * (1.0 + s) * B;\n}\n\n// denominator of the fraction nearest the rim point at angle t (Ford reduction)\nfloat rimOrder(float t, float y) {\n    vec2 tau = vec2(t / TAU, y);\n    vec4 g = vec4(1, 0, 0, 1);\n    for (int i = 0; i < 32; i++) {\n        float n = floor(tau.x + 0.5);\n        tau.x -= n; g.xy -= n * g.zw;\n        float r2 = dot(tau, tau);\n        if (r2 >= 1.0) break;\n        tau = vec2(-tau.x, tau.y) / r2;\n        g = vec4(-g.zw, g.xy);\n    }\n    return abs(g.z);\n}\n\nvec3 cyc(float h) {                                 // phase colours\n    h = fract(h) * 5.0;\n    vec3 c = mix(GOLD * 1.1, vec3(1.0, 0.42, 0.1), smoothstep(0.0, 1.0, h));\n    c = mix(c, vec3(0.88, 0.08, 0.13), smoothstep(1.0, 2.0, h));\n    c = mix(c, vec3(0.42, 0.1, 0.62), smoothstep(2.0, 3.0, h));\n    c = mix(c, PEA * 1.2, smoothstep(3.0, 4.0, h));\n    return mix(c, GOLD * 1.1, smoothstep(4.0, 5.0, h));\n}\n\nvec3 disk(vec2 uv, float s, float R0, float turn) {\n    const vec2 C = vec2(0.36, 0.0);\n    const float RAD = 0.33;\n    vec2 p = (uv - C) / RAD;\n    float cs = cos(turn), sn = sin(turn);\n    p = mat2(cs, sn, -sn, cs) * p;\n    float r = length(p), fp = PX / RAD;\n    float ang = atan(p.y, p.x);\n    vec3 col = vec3(0.008, 0.009, 0.022);\n    bool outside = r > 1.0;\n\n    // one loop: outside the disk a single rim sample for the ray, inside the\n    // pixel and two neighbours for gradients of log|F| and arg F\n    vec2 base = outside ? R0 * vec2(cos(ang), sin(ang)) : p * min(1.0, R0 / max(r, 1e-6));\n    float lm = 0.0, ph = 0.0;\n    vec2 glm = vec2(0.0), gph = vec2(0.0);\n    for (int k = 0; k < 3; k++) {\n        vec2 o = k == 1 ? vec2(fp, 0.0) : k == 2 ? vec2(0.0, fp) : vec2(0.0);\n        vec2 F = mockF(base + o, s);\n        float l = 0.5 * log2(max(dot(F, F), 1e-30)), a = atan(F.y, F.x) / TAU;\n        if (k == 0) { lm = l; ph = a; }\n        else {\n            vec2 m = k == 1 ? vec2(1.0, 0.0) : vec2(0.0, 1.0);\n            glm += m * (l - lm);\n            gph += m * (a - ph - floor(a - ph + 0.5));\n        }\n        if (outside) break;\n    }\n\n    // ray colour by the order of the nearest root: 2 mod 4 gold, 0 mod 4 peacock\n    float k = rimOrder(ang, -log(R0) / TAU);\n    float k4 = mod(k, 4.0);\n    vec3 rayC = k4 == 2.0 ? GOLD * 1.1 : k4 == 0.0 ? PEA * 1.6 : IVORY * 0.4;\n    float grow = (1.0 - R0) * lm * 0.693147;          // (1-|q|) log|F|: ~ c/k^2 at a root\n    float len = 0.85 * sqrt(max(grow - 0.02, 0.0) / 0.44);\n    if (outside) {\n        if (len > 0.002) {\n            float x = (r - 1.0) / len;\n            col += rayC * (0.9 * exp(-2.2 * x) + 1.6 * exp(-12.0 * x)) * (0.85 + 0.15 * sin(iTime * 5.0 + ang * 40.0));\n        }\n    } else {\n        vec3 hue = cyc(ph + 0.12);\n        vec3 c = vec3(0.012, 0.013, 0.032) + hue * (0.03 + 0.05 * fract(lm));\n        float gm = max(length(glm), 1e-5), gp = max(length(gph) * 12.0, 1e-5);\n        c += GOLD * 0.5 * smoothstep(1.4, 0.3, abs(lm - floor(lm + 0.5)) / gm) * smoothstep(0.45, 0.15, gm);\n        c += hue * 0.75 * smoothstep(1.4, 0.3, abs(ph * 12.0 - floor(ph * 12.0 + 0.5)) / gp) * smoothstep(0.45, 0.15, gp);\n        c = mix(c, hue * 0.22 + GOLD * 0.08, smoothstep(0.45, 1.5, max(gm, gp)) * 0.85);\n        c += rayC * 1.5 * pow(clamp((1.0 - length(base)) * lm * 0.693147 / 0.4, 0.0, 1.0), 2.0) * smoothstep(0.8, 0.99, r);\n        col = c;\n    }\n    col += GOLD * (0.9 * smoothstep(1.6 * fp, 0.3 * fp, abs(r - 1.0)) + 0.15 * exp(-abs(r - 1.0) / fp * 0.05));\n    return col;\n}\n\n// ---- text -------------------------------------------------------------------------\nuint packed(int s, int j) {             // strings, four chars per uint\n    if (s == 0) return j == 0 ? 1634558290u : j == 1 ? 1634366830u : j == 2 ? 544417646u : j == 3 ? 1801678701u : j == 4 ? 1701344288u : j == 5 ? 1713398132u : j == 6 ? 1952673397u : 7237481u;   // Ramanujan's mock theta function\n    if (s == 1) return j == 0 ? 695281766u : j == 1 ? 824196384u : j == 2 ? 1897933600u : j == 3 ? 724641839u : j == 4 ? 548546929u : j == 5 ? 1584472107u : j == 6 ? 824717108u : j == 7 ? 2989060395u : j == 8 ? 1898656040u : j == 9 ? 548546994u : j == 10 ? 774774827u : 46u;   // f(q) = 1 + q/(1+q)? + q^4/(1+q)?(1+q?)? + ...\n    if (s == 2) return j == 0 ? 1836020326u : j == 1 ? 1936287776u : j == 2 ? 1935764512u : j == 3 ? 1701585012u : j == 4 ? 1919251572u : j == 5 ? 544175136u : j == 6 ? 1685217608u : j == 7 ? 824192121u : 3158585u;   // from his last letter to Hardy, 1920\n    if (s == 3) return j == 0 ? 1684828007u : j == 1 ? 2036429344u : j == 2 ? 1864383091u : j == 3 ? 1919247474u : j == 4 ? 741482611u : j == 5 ? 539768352u : j == 6 ? 539766833u : 3026478u;   // gold rays: orders 2, 6, 10, ...\n    if (s == 4) return j == 0 ? 1667327344u : j == 1 ? 543908719u : j == 2 ? 1937334642u : j == 3 ? 1919885370u : j == 4 ? 1936876900u : j == 5 ? 539767840u : j == 6 ? 824192056u : j == 7 ? 773860402u : 11822u;   // peacock rays: orders 4, 8, 12, ...\n    if (s == 5) return j == 0 ? 539697254u : 98u;   // f + b\n    if (s == 6) return 102u;   // f\n    if (s == 7) return j == 0 ? 539828326u : 98u;   // f - b\n    if (s == 8) return j == 0 ? 544041330u : j == 1 ? 1953523044u : 104u;   // rim depth\n    if (s == 9) return j == 0 ? 695281762u : j == 1 ? 673201440u : j == 2 ? 2993765233u : j == 3 ? 2233506089u : j == 4 ? 975794472u : j == 5 ? 1948279072u : j == 6 ? 1635018088u : j == 7 ? 1853187616u : j == 8 ? 1869182051u : 110u;   // b(q) = (q;q?)? ?(q): a theta function\n    if (s == 10) return j == 0 ? 1751343461u : j == 1 ? 1970431264u : j == 2 ? 1869182064u : j == 3 ? 1936269422u : j == 4 ? 1886348064u : j == 5 ? 543450473u : j == 6 ? 1646295394u : j == 7 ? 1769414700u : j == 8 ? 1629513844u : j == 9 ? 1734964000u : 15214u;   // each eruption is copied by b, with a sign;\n    if (s == 11) return j == 0 ? 1931505518u : j == 1 ? 1818717801u : j == 2 ? 1752440933u : j == 3 ? 543257701u : j == 4 ? 1668183398u : j == 5 ? 1852795252u : j == 6 ? 1886348064u : j == 7 ? 544433513u : j == 8 ? 1835362420u : 1819042080u;   // no single theta function copies them all\n    if (s == 12) return j == 0 ? 1734439524u : j == 1 ? 1701344288u : j == 2 ? 1936286752u : j == 3 ? 1869881451u : j == 4 ? 1920300064u : 1953046638u;   // drag the disk to turn it\n    return 0u;\n}\nint strLen(int s) { return s == 0 ? 31 : s == 1 ? 45 : s == 2 ? 35 : s == 3 ? 31 : s == 4 ? 34 : s == 5 ? 5 : s == 6 ? 1 : s == 7 ? 5 : s == 8 ? 9 : s == 9 ? 37 : s == 10 ? 42 : s == 11 ? 40 : 24; }\n\nuint strChar(int s, int i) { return (packed(s, i >> 2) >> (8 * (i & 3))) & 255u; }\n\nfloat glyph(uint c, vec2 q) {\n    vec2 uv = vec2(0.5 + q.x - 0.5 * ADV, 0.8 - q.y);\n    if (c == 32u || c == 0u || uv.x < 0.0 || uv.x > 1.0 || uv.y < 0.0 || uv.y > 1.0) return 1e5;\n    return textureLod(iChannel1, (vec2(float(c % 16u), float(c / 16u)) + uv) / 16.0, 0.0).a - 0.5;\n}\n\n// one line of packed string s; align 0 left, 0.5 centre\nvec3 textLine(vec2 uv, vec2 org, float em, int s, float align, vec3 col, float alpha, vec3 acc) {\n    int n = strLen(s);\n    vec2 q = (uv - org) / em;\n    q.x += align * float(n) * ADV;\n    if (alpha <= 0.0 || q.y < -0.35 || q.y > 1.0 || q.x < 0.0 || q.x > float(n) * ADV) return acc;\n    int i = int(q.x / ADV);\n    float d = glyph(strChar(s, i), vec2(q.x - float(i) * ADV, q.y)) * em;\n    float cov = smoothstep(0.7 * PX, -0.7 * PX, d) * alpha;\n    acc *= 1.0 - 0.5 * smoothstep(0.12 * em, 0.0, d) * alpha;\n    return mix(acc, col, cov) + col * exp(-max(d, 0.0) / (0.06 * em)) * 0.25 * alpha * (1.0 - cov);\n}\n\nvec3 slider(vec2 uv, float y, float f, bool hot, bool ticks, vec3 col) {\n    float dTrack = length(vec2(uv.x - clamp(uv.x, SX0, SX1), uv.y - y));\n    float kx = mix(SX0, SX1, f);\n    float line = smoothstep(2.0 * PX, 0.5 * PX, dTrack - 0.002);\n    col = mix(col, vec3(0.30, 0.28, 0.36), line);\n    if (ticks) for (int i = 0; i < 3; i++) {\n        float tx = mix(SX0, SX1, 0.5 * float(i));\n        col = mix(col, IVORY * 0.7, smoothstep(1.5 * PX, 0.3 * PX, length(vec2(uv.x - tx, max(abs(uv.y - y) - 0.012, 0.0))) - 0.0015));\n    } else col = mix(col, GOLD * 0.8, line * step(uv.x, kx));\n    float dk = length(uv - vec2(kx, y)) - (hot ? 0.016 : 0.013);\n    col = mix(col, IVORY, smoothstep(PX, -PX, dk));\n    return col + GOLD * 0.35 * exp(-max(dk, 0.0) * 60.0);\n}\n\nvec3 aces(vec3 x) { return clamp((x * (2.51 * x + 0.03)) / (x * (2.43 * x + 0.59) + 0.14), 0.0, 1.0); }\n\nvoid mainImage(out vec4 O, in vec2 fc) {\n    PX = 1.0 / iResolution.y;\n    vec2 uv = (fc - 0.5 * iResolution.xy) * PX;\n    float s = st(1), R0 = st(3), turn = st(5), act = st(6);\n\n    vec3 col = aces(disk(uv, s, R0, turn) * 1.05);\n    col = slider(uv, SY_S, 0.5 + 0.5 * s, act == 1.0, true, col);\n    col = slider(uv, SY_R, (R0 - R_MIN) / (R_MAX - R_MIN), act == 2.0, false, col);\n\n    if (uv.x < -0.08) {\n        col = textLine(uv, vec2(-0.82, 0.40), 0.042, 0, 0.0, GOLD, 1.0, col);\n        col = textLine(uv, vec2(-0.82, 0.32), 0.030, 1, 0.0, IVORY, 1.0, col);\n        col = textLine(uv, vec2(-0.82, 0.265), 0.024, 2, 0.0, IVORY * 0.55, 1.0, col);\n        // what the current mix shows\n        float wf = 1.0 - min(abs(s), 1.0), wm = max(s, 0.0), wp = max(-s, 0.0);\n        col = textLine(uv, vec2(-0.82, 0.17), 0.026, 3, 0.0, GOLD, wf + wm, col);\n        col = textLine(uv, vec2(-0.82, 0.125), 0.026, 4, 0.0, PEA * 1.3, wf + wp, col);\n        col = textLine(uv, vec2(-0.82, 0.06), 0.022, 10, 0.0, IVORY * 0.7, 1.0 - wf, col);\n        col = textLine(uv, vec2(-0.82, 0.025), 0.022, 11, 0.0, IVORY * 0.7, 1.0 - wf, col);\n        for (int i = 0; i < 3; i++) {\n            float sel = 1.0 - min(abs(s - float(i - 1)), 1.0);\n            col = textLine(uv, vec2(mix(SX0, SX1, 0.5 * float(i)), SY_S + 0.03), 0.028, 5 + i, 0.5,\n                           mix(IVORY * 0.5, GOLD * 1.2, sel), 1.0, col);\n        }\n        col = textLine(uv, vec2(-0.82, SY_R + 0.03), 0.026, 8, 0.0, IVORY * 0.8, 1.0, col);\n        col = textLine(uv, vec2(-0.82, -0.37), 0.022, 9, 0.0, IVORY * 0.5, 1.0, col);\n        col = textLine(uv, vec2(-0.82, -0.42), 0.020, 12, 0.0, IVORY * 0.4, 1.0, col);\n    }\n    vec2 v = fc / iResolution.xy - 0.5;\n    col *= 1.0 - 0.5 * dot(v * vec2(1.1, 1.3), v * vec2(1.1, 1.3));\n    O = vec4(pow(col, vec3(1.0 / 2.2)), 1.0);\n}\n",
+      "name": "Image",
+      "description": "",
+      "type": "image"
+    }
+  ]
+}
