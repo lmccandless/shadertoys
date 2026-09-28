@@ -1,0 +1,103 @@
+{
+  "ver": "0.1",
+  "info": {
+    "id": "",
+    "date": "0",
+    "viewed": 0,
+    "name": "Ramanujan's Congruences",
+    "description": "p(n) on a spiral with m tiles per turn, gold where m divides p(n). Slide m: at 5, 7 and 11 one residue class turns solid gold, p(5k+4), p(7k+5), p(11k+6). Exact p(n) mod lcm(1..16) computed on the GPU.",
+    "likes": 0,
+    "published": "Private",
+    "usePreview": 0,
+    "tags": [
+      "ramanujan",
+      "partitions",
+      "congruences",
+      "interactive",
+      "numbertheory"
+    ],
+    "hasliked": 0,
+    "parentid": "",
+    "parentname": ""
+  },
+  "renderpass": [
+    {
+      "inputs": [],
+      "outputs": [],
+      "code": "// RAMANUJAN'S CONGRUENCES (interactive)\n// p(n) is laid on a spiral with m tiles per turn, so tile n sits at angle\n// 2 pi n / m and every residue class n mod m becomes a wedge. A tile is gold\n// when m divides p(n). For m = 5, 7, 11 the class 24n = 1 (mod m) is gold all\n// the way out:  p(5k+4) = 0 (mod 5),  p(7k+5) = 0 (mod 7),  p(11k+6) = 0 (mod 11).\n// Drag the m slider through non-integer values to watch the spiral re-tune.\n\n// slider geometry, in screen-height units from the centre\nconst float SX0 = -0.80, SX1 = -0.30, SY_M = -0.20, SY_R = -0.33, S_HIT = 0.045;\nconst float M_MIN = 2.0, M_MAX = 16.0, R_MIN = 6.0, R_MAX = 60.0;\nconst int   LMOD = 720720;              // lcm(1..16): p(n) mod m for every m <= 16\nconst int   PN = 1024;                  // table size\n",
+      "name": "Common",
+      "description": "",
+      "type": "common"
+    },
+    {
+      "inputs": [
+        {
+          "id": "4dXGR8",
+          "filepath": "/media/previz/buffer00.png",
+          "type": "buffer",
+          "channel": 0,
+          "sampler": {
+            "filter": "nearest",
+            "wrap": "clamp",
+            "vflip": "true",
+            "srgb": "false",
+            "internal": "byte"
+          },
+          "published": 1
+        }
+      ],
+      "outputs": [
+        {
+          "id": "4dXGR8",
+          "channel": 0
+        }
+      ],
+      "code": "// Buffer A — state and data.  iChannel0 = Buffer A (self)\n//  row 0: x of texel 0 m target, 1 m eased, 2 rings target, 3 rings eased,\n//         4 active slider (0 none, 1 m, 2 rings), 5 frames since start\n//  rows 1..4: p(n) mod 720720 for n < 1024 (256 per row), from Euler's\n//  pentagonal recurrence jumped 8 levels per frame (complete after 128 frames):\n//    p(n) = sum_k (-1)^(k+1) sum_{g = k(3k-+1)/2} sum_{i<8, g+i>=8} p(i) p(n-g-i)\n\nfloat st(int i) { return texelFetch(iChannel0, ivec2(i, 0), 0).x; }\nint smallp(int i) { return i < 2 ? 1 : i == 2 ? 2 : i == 3 ? 3 : i == 4 ? 5 : i == 5 ? 7 : i == 6 ? 11 : 15; }\nint pmod(int n) { return int(texelFetch(iChannel0, ivec2(n & 255, 1 + (n >> 8)), 0).x); }\n\nvoid mainImage(out vec4 O, in vec2 fc) {\n    ivec2 p = ivec2(fc);\n    O = vec4(0.0);\n    if (p.y == 0 && p.x < 6) {\n        bool init = iFrame == 0;\n        float tm = init ? 5.0 : st(0), cm = init ? 5.0 : st(1);\n        float tr = init ? 30.0 : st(2), cr = init ? 30.0 : st(3);\n        float act = init ? 0.0 : st(4), fr = init ? 0.0 : st(5) + 1.0;\n        float px = 1.0 / iResolution.y;\n        vec2 ms = (iMouse.xy - 0.5 * iResolution.xy) * px;\n        vec2 ck = (abs(iMouse.zw) - 0.5 * iResolution.xy) * px;\n        if (iMouse.z > 0.0) {\n            if (iMouse.w > 0.0) {                   // press: which slider?\n                bool inX = ck.x > SX0 - 0.03 && ck.x < SX1 + 0.03;\n                act = inX && abs(ck.y - SY_M) < S_HIT ? 1.0 : inX && abs(ck.y - SY_R) < S_HIT ? 2.0 : 0.0;\n            }\n            float f = clamp((ms.x - SX0) / (SX1 - SX0), 0.0, 1.0);\n            if (act == 1.0) tm = mix(M_MIN, M_MAX, f);\n            if (act == 2.0) tr = mix(R_MIN, R_MAX, f);\n        } else {\n            act = 0.0;\n            tm = floor(tm + 0.5);                   // m settles on a whole number\n        }\n        float k = 1.0 - exp(-7.0 * clamp(iTimeDelta, 0.0, 0.1));\n        cm += (tm - cm) * k; cr += (tr - cr) * k;\n        O.x = p.x == 0 ? tm : p.x == 1 ? cm : p.x == 2 ? tr : p.x == 3 ? cr : p.x == 4 ? act : fr;\n        return;\n    }\n    if (p.y < 1 || p.y > 4) return;\n    int n = (p.y - 1) * 256 + p.x;\n    if (n < 8) { O.x = float(smallp(n)); return; }\n    int pos = 0, neg = 0;\n    for (int k = 1; k < 40; k++) {\n        int g1 = k * (3 * k - 1) / 2;\n        if (g1 > n) break;\n        for (int s = 0; s < 2; s++) {\n            int g = g1 + s * k;\n            for (int i = max(0, 8 - g); i < 8; i++) {\n                int m = n - g - i;\n                if (m < 0) break;\n                int v = (smallp(i) * pmod(m)) % LMOD;\n                if ((k & 1) == 1) pos = (pos + v) % LMOD; else neg = (neg + v) % LMOD;\n            }\n        }\n    }\n    O.x = float((pos - neg + LMOD) % LMOD);\n}\n",
+      "name": "Buffer A",
+      "description": "",
+      "type": "buffer"
+    },
+    {
+      "inputs": [
+        {
+          "id": "4dXGR8",
+          "filepath": "/media/previz/buffer00.png",
+          "type": "buffer",
+          "channel": 0,
+          "sampler": {
+            "filter": "nearest",
+            "wrap": "clamp",
+            "vflip": "true",
+            "srgb": "false",
+            "internal": "byte"
+          },
+          "published": 1
+        },
+        {
+          "id": "4dXGzr",
+          "filepath": "/media/a/08b42b43ae9d3c0605da11d0eac86618ea888e62cdd9518ee8b9097488b31560.png",
+          "type": "texture",
+          "channel": 1,
+          "sampler": {
+            "filter": "linear",
+            "wrap": "clamp",
+            "vflip": "false",
+            "srgb": "false",
+            "internal": "byte"
+          },
+          "published": 1
+        }
+      ],
+      "outputs": [
+        {
+          "id": "4dfGRr",
+          "channel": 0
+        }
+      ],
+      "code": "// Image — the rose window, two sliders, and a few lines of text.\n// iChannel0 = Buffer A (state, p(n) mod 720720)   iChannel1 = font texture\n//\n// Text is fixed-width: each line costs one font sample per pixel, and strings\n// are packed four characters to a uint (no arrays, no glyph-width passes).\n\nconst vec3 GOLD = vec3(1.0, 0.66, 0.24), IVORY = vec3(0.95, 0.88, 0.74);\nconst float PI = 3.14159265, TAU = 6.28318531, ADV = 0.5;\nfloat PX;\n\nfloat st(int i) { return texelFetch(iChannel0, ivec2(i, 0), 0).x; }\nint pmodm(int n, int m) { return int(texelFetch(iChannel0, ivec2(n & 255, 1 + (n >> 8)), 0).x) % m; }\n\n// ---- text ------------------------------------------------------------------------\nuint packed(int s, int j) {                 // strings, four chars per uint\n    if (s == 0) return j == 0 ? 1634558290u : j == 1 ? 1634366830u : j == 2 ? 544417646u\n                     : j == 3 ? 1735290723u : j == 4 ? 1852142962u : 7562595u;   // Ramanujan's congruences\n    if (s == 1) return j == 0 ? 1684828007u : j == 1 ? 544022586u : j == 2 ? 1769367908u\n                     : j == 3 ? 544433508u : 695085168u;                           // gold: m divides p(n)\n    if (s == 2) return j == 0 ? 1735289202u : 115u;                                // rings\n    return j == 0 ? 1734439524u : j == 1 ? 1701344288u : j == 2 ? 1768715040u : 1936876900u; // drag the sliders\n}\nuint strChar(int s, int i) { return (packed(s, i >> 2) >> (8 * (i & 3))) & 255u; }\nint ndig(int v) { return v >= 10 ? 2 : 1; }\nuint digitOf(int v, int nd, int i) { return 48u + uint(nd == 2 && i == 0 ? v / 10 : v % 10); }\n\n// signed distance (em) to glyph c drawn in the fixed-width slot at q (em, baseline y = 0)\nfloat glyph(uint c, vec2 q) {\n    if (c == 1u) {                           // the congruence sign, drawn: three bars\n        vec2 r = vec2(abs(q.x - 0.5 * ADV) - 0.2, 0.0);\n        float d = 1e5;\n        for (int k = 0; k < 3; k++) d = min(d, length(vec2(max(r.x, 0.0), q.y - 0.17 - 0.14 * float(k))));\n        return d - 0.04;\n    }\n    vec2 uv = vec2(0.5 + q.x - 0.5 * ADV, 0.8 - q.y);\n    if (c == 32u || uv.x < 0.0 || uv.x > 1.0 || uv.y < 0.0 || uv.y > 1.0) return 1e5;\n    return textureLod(iChannel1, (vec2(float(c % 16u), float(c / 16u)) + uv) / 16.0, 0.0).a - 0.5;\n}\n\n// the formula \"p(mk+d) = 0 (mod m)\" for the current modulus, char by char\nuint formulaChar(int i, int m, int d) {\n    int lm = ndig(m), ld = ndig(d);\n    if (i < 2) return i == 0 ? 112u : 40u;                 i -= 2;   // p(\n    if (i < lm) return digitOf(m, lm, i);                  i -= lm;\n    if (i < 2) return i == 0 ? 107u : 43u;                 i -= 2;   // k+\n    if (i < ld) return digitOf(d, ld, i);                  i -= ld;\n    if (i < 2) return i == 0 ? 41u : 32u;                  i -= 2;   // \")\"\n    if (i < 1) return 1u;                                  i -= 1;   // congruence sign\n    if (i < 8) return i == 0 ? 32u : i == 1 ? 48u : i == 2 ? 32u : i == 3 ? 40u\n                    : i == 4 ? 109u : i == 5 ? 111u : i == 6 ? 100u : 32u;  i -= 8;   // \" 0 (mod \"\n    if (i < lm) return digitOf(m, lm, i);                  i -= lm;\n    return i == 0 ? 41u : 32u;\n}\n\n// Draws one line: `kind` 0-4 packed strings, 10 formula, 11 \"m = \", 12 \"rings = \", 13 a number\nvec4 textLine(vec2 uv, vec2 org, float em, int kind, int n, int a, int b, vec3 col, vec4 acc) {\n    vec2 q = (uv - org) / em;\n    if (q.y < -0.35 || q.y > 1.0 || q.x < 0.0 || q.x > float(n) * ADV) return acc;\n    int i = int(q.x / ADV);\n    uint c;\n    if (kind < 10) c = strChar(kind, i);\n    else if (kind == 10) c = formulaChar(i, a, b);\n    else if (kind == 13) c = digitOf(a, ndig(a), i);\n    else {\n        int pre = kind == 11 ? 4 : 8;           // \"m = \" or \"rings = \"\n        c = i >= pre ? digitOf(a, ndig(a), i - pre)\n          : kind == 11 ? (i == 0 ? 109u : i == 2 ? 61u : 32u)\n          : (i < 5 ? strChar(2, i) : i == 6 ? 61u : 32u);\n    }\n    float d = glyph(c, vec2(q.x - float(i) * ADV, q.y)) * em;\n    float cov = smoothstep(0.7 * PX, -0.7 * PX, d);\n    float glow = exp(-max(d, 0.0) / (0.06 * em)) * 0.25;\n    return vec4(mix(acc.rgb * (1.0 - 0.5 * smoothstep(0.12 * em, 0.0, d)), col, cov) + col * glow * (1.0 - cov), 1.0);\n}\n\n// ---- the rose window ----------------------------------------------------------------\nint special(int m) { for (int d = 0; d < 16; d++) if ((24 * d) % m == 1) return d; return -1; }\nfloat wedgeOffset(int m) { int s = special(m); return PI * 0.5 - TAU * (float(max(s, 0)) + 0.5) / float(m); }\n\nvec3 jewel(float h) {\n    vec3 a = mix(vec3(0.10, 0.12, 0.62), vec3(0.02, 0.48, 0.55), smoothstep(0.0, 0.5, h));\n    return mix(a, vec3(0.55, 0.10, 0.62), smoothstep(0.5, 1.0, h));\n}\nvec3 tileColor(int n, int m) {\n    int r = pmodm(n, m);\n    if (r == 0) return GOLD * 1.6;\n    return jewel(float(r - 1) / float(max(m - 2, 1))) * (0.45 + 0.4 * fract(sin(float(n * 7 + m)) * 43758.5));\n}\n\nvec3 window(vec2 uv, float m, float rings, float ready) {\n    int m0 = int(floor(m)), m1 = m0 + 1;\n    float x = m - float(m0);\n    int mr = int(floor(m + 0.5));\n    float off = mix(wedgeOffset(m0), wedgeOffset(m1), x);\n    float lock = pow(max(1.0 - abs(m - float(mr)) * 4.0, 0.0), 2.0)\n               * ((mr == 5 || mr == 7 || mr == 11) ? 1.0 : 0.0);\n\n    vec2 c = uv - vec2(0.30, 0.0);\n    float rho = length(c);\n    const float RIN = 0.075, ROUT = 0.46;\n    float w = (ROUT - RIN) / rings;\n    float sf = (rho - RIN) / w;\n    float s0 = mod(atan(c.y, c.x) - off, TAU) / TAU;\n    float sp = s0 + floor(sf - s0 + 0.5);                // spiral parameter of this band\n    float dr = sf - sp;\n    float xs = sp * m;\n    int n = int(floor(xs));\n\n    float wedgeAng = abs(mod(atan(c.y, c.x) - PI * 0.5 + PI, TAU) - PI);\n    float halfW = PI / m;\n    float beam = smoothstep(halfW * 1.05, halfW * 0.4, wedgeAng) * smoothstep(RIN * 0.5, ROUT, rho);\n    vec3 col = vec3(0.008, 0.009, 0.022) + GOLD * 0.10 * lock * beam * smoothstep(ROUT + 0.25, ROUT, rho);\n\n    if (sp < 0.0 || sp >= rings || n < 0 || n >= PN) {\n        float hub = smoothstep(RIN - 0.004, RIN - 0.006 - PX, rho);\n        col = mix(col, vec3(0.012, 0.012, 0.03), hub);\n        col += GOLD * 0.9 * smoothstep(1.5 * PX, 0.0, abs(rho - RIN + 0.008));\n        col += GOLD * 0.5 * smoothstep(1.5 * PX, 0.0, abs(rho - ROUT - 0.008));\n        return col;\n    }\n    float L = TAU * rho / m;                            // tile length along the spiral\n    vec2 q = vec2((fract(xs) - 0.5) * L, dr * w);\n    vec2 hs = vec2(0.5 * L, 0.5 * w) - 1.1 * PX;\n    float rr = min(0.35 * w, 3.0 * PX);\n    vec2 d = abs(q) - hs + rr;\n    float sd = length(max(d, 0.0)) + min(max(d.x, d.y), 0.0) - rr;\n    float cov = smoothstep(0.75 * PX, -0.75 * PX, sd);\n    float bev = smoothstep(0.0, 0.35 * w, -sd);\n\n    vec3 tc = tileColor(n, max(m0, 2));\n    if (x > 0.001) tc = mix(tc, tileColor(n, m1), x);\n    tc *= 1.0 + lock * (wedgeAng < halfW ? 0.8 : -0.25);\n    tc *= float(n) < ready ? 1.0 : 0.15;                // table still filling (first 2 s)\n    col = mix(col, tc * (0.55 + 0.45 * bev) + tc * 0.25 * (1.0 - bev) * sign(dr), cov);\n    return col + GOLD * 0.25 * lock * beam * cov;\n}\n\n// ---- sliders ----------------------------------------------------------------------------\nvec3 slider(vec2 uv, float y, float f, bool hot, vec3 col) {\n    float dx = uv.x - clamp(uv.x, SX0, SX1);\n    float dTrack = length(vec2(dx, uv.y - y));\n    float kx = mix(SX0, SX1, f);\n    col = mix(col, vec3(0.30, 0.28, 0.36), smoothstep(2.0 * PX, 0.5 * PX, dTrack - 0.002));\n    col = mix(col, GOLD * 0.8, smoothstep(2.0 * PX, 0.5 * PX, dTrack - 0.002) * step(uv.x, kx));\n    float dk = length(uv - vec2(kx, y)) - (hot ? 0.016 : 0.013);\n    col = mix(col, IVORY, smoothstep(PX, -PX, dk));\n    return col + GOLD * 0.35 * exp(-max(dk, 0.0) * 60.0);\n}\n\nvec3 aces(vec3 x) { return clamp((x * (2.51 * x + 0.03)) / (x * (2.43 * x + 0.59) + 0.14), 0.0, 1.0); }\n\nvoid mainImage(out vec4 O, in vec2 fc) {\n    PX = 1.0 / iResolution.y;\n    vec2 uv = (fc - 0.5 * iResolution.xy) * PX;\n    float m = st(1), rings = st(3), act = st(4), ready = st(5) * 8.0;\n    int mr = int(floor(m + 0.5)), rr = int(floor(rings + 0.5));\n\n    vec3 col = aces(window(uv, m, rings, ready) * 1.1);\n    col = slider(uv, SY_M, (m - M_MIN) / (M_MAX - M_MIN), act == 1.0, col);\n    col = slider(uv, SY_R, (rings - R_MIN) / (R_MAX - R_MIN), act == 2.0, col);\n\n    // text: only when the pixel is on the left panel or the hub\n    vec4 t = vec4(col, 0.0);\n    if (uv.x < -0.1) {\n        t = textLine(uv, vec2(-0.82, 0.40), 0.046, 0, 23, 0, 0, GOLD, t);\n        t = textLine(uv, vec2(-0.82, 0.33), 0.028, 1, 20, 0, 0, IVORY * 0.6, t);\n        int d = special(mr);\n        float lock = max(1.0 - abs(m - float(mr)) * 4.0, 0.0);\n        if ((mr == 5 || mr == 7 || mr == 11) && lock > 0.0) {\n            vec4 f = textLine(uv, vec2(-0.82, 0.05), 0.046, 10, 16 + 2 * ndig(mr) + ndig(d), mr, d, GOLD, t);\n            t.rgb = mix(t.rgb, f.rgb, lock);\n        }\n        t = textLine(uv, vec2(-0.82, SY_M + 0.03), 0.03, 11, 4 + ndig(mr), mr, 0, IVORY, t);\n        t = textLine(uv, vec2(-0.82, SY_R + 0.03), 0.03, 12, 8 + ndig(rr), rr, 0, IVORY, t);\n        t = textLine(uv, vec2(-0.82, SY_R - 0.085), 0.024, 4, 16, 0, 0, IVORY * 0.45, t);\n    } else if (length(uv - vec2(0.30, 0.0)) < 0.07) {\n        int nd = ndig(mr);\n        t = textLine(uv, vec2(0.30 - 0.5 * float(nd) * ADV * 0.06, -0.018), 0.06, 13, nd, mr, 0, GOLD, t);\n    }\n    col = t.rgb;\n    vec2 v = fc / iResolution.xy - 0.5;\n    col *= 1.0 - 0.5 * dot(v * vec2(1.1, 1.3), v * vec2(1.1, 1.3));\n    O = vec4(pow(col, vec3(1.0 / 2.2)), 1.0);\n}\n",
+      "name": "Image",
+      "description": "",
+      "type": "image"
+    }
+  ]
+}
