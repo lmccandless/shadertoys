@@ -1,0 +1,432 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Ramanujan Shader Viewer</title>
+<style>
+  :root {
+    --bg: #05060c;
+    --panel: rgba(12, 13, 24, 0.78);
+    --ink: #efe6d2;
+    --muted: #9a927f;
+    --accent: #f0b64f;
+    --err: #ff6b6b;
+  }
+  html, body { margin: 0; height: 100%; background: var(--bg); color: var(--ink); overflow: hidden;
+    font: 13px/1.4 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
+  #wrap { position: fixed; inset: 0; display: flex; align-items: center; justify-content: center; }
+  canvas { display: block; width: 100%; height: 100%; background: #000; touch-action: none; }
+  #bar { position: fixed; left: 12px; right: 12px; bottom: 12px; display: flex; gap: 10px; align-items: center;
+    padding: 8px 12px; border-radius: 10px; background: var(--panel); backdrop-filter: blur(6px);
+    transition: opacity .4s; flex-wrap: wrap; }
+  body.idle #bar { opacity: 0; }
+  #bar button, #bar select, #bar label { font: inherit; color: var(--ink); background: transparent;
+    border: 1px solid rgba(239, 230, 210, .25); border-radius: 6px; padding: 3px 9px; cursor: pointer; }
+  #bar button:hover, #bar label:hover { border-color: var(--accent); color: var(--accent); }
+  #stats { color: var(--muted); margin-left: auto; white-space: nowrap; }
+  #title { color: var(--accent); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 40vw; }
+  #err { position: fixed; top: 12px; left: 12px; right: 12px; max-height: 60vh; overflow: auto; display: none;
+    white-space: pre-wrap; background: rgba(40, 6, 10, .92); color: var(--err); padding: 12px; border-radius: 8px; }
+  #file { display: none; }
+</style>
+</head>
+<body>
+<div id="wrap"><canvas id="c"></canvas></div>
+<div id="bar">
+  <button id="play" title="Play / pause (space)">❚❚</button>
+  <button id="restart" title="Restart (R)">⟲</button>
+  <select id="scale" title="Render scale">
+    <option value="0.5">0.5×</option>
+    <option value="0.75">0.75×</option>
+    <option value="1" selected>1×</option>
+  </select>
+  <button id="fs" title="Fullscreen (F)">⛶</button>
+  <label title="Load another Shadertoy JSON export">load json<input id="file" type="file" accept=".json,application/json"></label>
+  <span id="title"></span>
+  <span id="stats"></span>
+</div>
+<pre id="err"></pre>
+<script id="shader-json" type="application/json">{"ver":"0.1","info":{"id":"","date":"0","viewed":0,"name":"Mock Theta Field Lines","description":"Ramanujan's mock theta function f(q) on the unit disk as glowing field lines of phase and modulus. It erupts at every even-order root of unity: pan and zoom into the rim for ever finer flowers; morph f+b / f / f-b.","likes":0,"published":"Private","usePreview":0,"tags":["ramanujan","mocktheta","domaincoloring","fieldlines","interactive"],"hasliked":0,"parentid":"","parentname":""},"renderpass":[{"inputs":[],"outputs":[],"code":"// MOCK THETA FIELD LINES\n// Ramanujan's third-order mock theta function f(q) = 1 + q/(1+q)^2 + ...\n// on the unit disk, drawn as field lines: coloured lines where its phase is a\n// multiple of 1/12 turn, gold lines where |f| doubles. It erupts at every root\n// of unity of even order; zoom into the rim to see the flowers it makes there.\n// Drag: pan.  Bottom-right: zoom.  Bottom-left: morph f + b | f | f - b, where\n// b is a theta function that calms half of the eruptions each way.\n\nconst float UI_Y = -0.43, UI_HIT = 0.045;\nconst float MX0 = -0.82, MX1 = -0.50;     // morph slider\nconst float ZX0 = 0.50, ZX1 = 0.82;       // zoom slider\nconst float ZOOM_MAX = 8.0;               // log2 of the deepest zoom (x256)\nconst float DISK_R = 0.44;                // disk radius on screen at zoom 1\n","name":"Common","description":"","type":"common"},{"inputs":[{"id":"4dXGR8","filepath":"/media/previz/buffer00.png","type":"buffer","channel":0,"sampler":{"filter":"nearest","wrap":"clamp","vflip":"true","srgb":"false","internal":"byte"},"published":1}],"outputs":[{"id":"4dXGR8","channel":0}],"code":"// Buffer A — UI state (texels 0..11 of row 0).  iChannel0 = Buffer A (self)\n//  0-1 pan target (disk units), 2-3 pan eased, 4-5 zoom target/eased (log2),\n//  6-7 morph target/eased, 8 active (0, 1 pan, 2 morph, 3 zoom), 10-11 pan at press\n\nfloat st(int i) { return texelFetch(iChannel0, ivec2(i, 0), 0).x; }\n\nvoid mainImage(out vec4 O, in vec2 fc) {\n    ivec2 p = ivec2(fc);\n    O = vec4(0.0);\n    if (p.y != 0 || p.x > 11) return;\n    bool init = iFrame == 0;\n    vec2 tp = init ? vec2(0.0) : vec2(st(0), st(1)), cp = init ? vec2(0.0) : vec2(st(2), st(3));\n    float tz = init ? 0.0 : st(4), cz = init ? 0.0 : st(5);\n    float tm = init ? 0.0 : st(6), cm = init ? 0.0 : st(7);\n    float act = init ? 0.0 : st(8);\n    vec2 p0 = init ? vec2(0.0) : vec2(st(10), st(11));\n    float px = 1.0 / iResolution.y;\n    vec2 ms = (iMouse.xy - 0.5 * iResolution.xy) * px;\n    vec2 ck = (abs(iMouse.zw) - 0.5 * iResolution.xy) * px;\n    if (iMouse.z > 0.0) {\n        if (iMouse.w > 0.0) {\n            bool onUI = abs(ck.y - UI_Y) \u003c UI_HIT;\n            act = onUI && ck.x > MX0 - 0.03 && ck.x \u003c MX1 + 0.03 ? 2.0\n                : onUI && ck.x > ZX0 - 0.03 && ck.x \u003c ZX1 + 0.03 ? 3.0 : 1.0;\n            p0 = tp;\n        }\n        if (act == 1.0) tp = p0 - (ms - ck) / (DISK_R * exp2(cz));\n        if (act == 2.0) tm = mix(-1.0, 1.0, clamp((ms.x - MX0) / (MX1 - MX0), 0.0, 1.0));\n        if (act == 3.0) tz = ZOOM_MAX * clamp((ms.x - ZX0) / (ZX1 - ZX0), 0.0, 1.0);\n    } else {\n        act = 0.0;\n        tm = floor(tm + 0.5);                       // morph settles on f+b, f, f-b\n    }\n    tp = clamp(tp, vec2(-1.1), vec2(1.1));\n    float k = 1.0 - exp(-6.0 * clamp(iTimeDelta, 0.0, 0.1));\n    cp += (tp - cp) * k; cz += (tz - cz) * k; cm += (tm - cm) * k;\n    O.x = p.x == 0 ? tp.x : p.x == 1 ? tp.y : p.x == 2 ? cp.x : p.x == 3 ? cp.y : p.x == 4 ? tz : p.x == 5 ? cz\n        : p.x == 6 ? tm : p.x == 7 ? cm : p.x == 8 ? act : p.x == 10 ? p0.x : p.x == 11 ? p0.y : 0.0;\n}\n","name":"Buffer A","description":"","type":"buffer"},{"inputs":[{"id":"4dXGR8","filepath":"/media/previz/buffer00.png","type":"buffer","channel":0,"sampler":{"filter":"nearest","wrap":"clamp","vflip":"true","srgb":"false","internal":"byte"},"published":1}],"outputs":[{"id":"XsXGR8","channel":0}],"code":"// Buffer B — the field lines, in HDR (bloomed by Image).\n// iChannel0 = Buffer A (UI state)\n//\n// One series evaluation per pixel: line widths come from fwidth() rather than\n// extra samples, and the sums are renormalised as they grow so the eruptions\n// never overflow a float, however deep the zoom.\n\nconst vec3 GOLD = vec3(1.0, 0.66, 0.24);\nconst float TAU = 6.28318531;\n\nfloat st(int i) { return texelFetch(iChannel0, ivec2(i, 0), 0).x; }\nvec2 cmul(vec2 a, vec2 b) { return vec2(a.x * b.x - a.y * b.y, a.x * b.y + a.y * b.x); }\nvec2 cdiv(vec2 a, vec2 b) { return vec2(a.x * b.x + a.y * b.y, a.y * b.x - a.x * b.y) / dot(b, b); }\n\n// f - s b = (1-s) A - 2(1+s) B via Watson (f = A - 2B, b = A + 2B): no\n// cancellation. Returns the value scaled by e^-lsc.\nvec2 mockF(vec2 q, float s, out float lsc) {\n    vec2 one = vec2(1.0, 0.0), q2 = cmul(q, q), qp = q;\n    vec2 a = cdiv(-q, one + q2), b = -cdiv(q, one + q);\n    vec2 A = one + a, B = b;\n    lsc = 0.0;\n    for (int n = 2; n \u003c 360; n++) {\n        qp = cmul(qp, q2);                              // q^(2n-1)\n        a = cmul(a, cdiv(-qp, one + cmul(qp, q)));\n        b = cmul(b, cdiv(-qp, one + qp));\n        A += a; B += b;\n        if (max(dot(A, A), dot(B, B)) > 1e24) { a *= 1e-12; b *= 1e-12; A *= 1e-12; B *= 1e-12; lsc += 27.631021; }\n        if (n > 4 && dot(qp, qp) \u003c 1e-14 * (1.0 + dot(a, a) + dot(b, b))) break;\n    }\n    return (1.0 - s) * A - 2.0 * (1.0 + s) * B;\n}\n\nvec3 palette(float h) {                                 // gold, saffron, crimson, violet, peacock\n    h = fract(h) * 5.0;\n    vec3 c = mix(vec3(1.1, 0.73, 0.26), vec3(1.0, 0.42, 0.1), smoothstep(0.0, 1.0, h));\n    c = mix(c, vec3(0.88, 0.08, 0.13), smoothstep(1.0, 2.0, h));\n    c = mix(c, vec3(0.42, 0.1, 0.62), smoothstep(2.0, 3.0, h));\n    c = mix(c, vec3(0.06, 0.78, 0.86), smoothstep(3.0, 4.0, h));\n    return mix(c, vec3(1.1, 0.73, 0.26), smoothstep(4.0, 5.0, h));\n}\n\nvoid mainImage(out vec4 O, in vec2 fc) {\n    float px = 1.0 / iResolution.y;\n    vec2 uv = (fc - 0.5 * iResolution.xy) * px;\n    float scale = DISK_R * exp2(st(5));                  // screen units per disk unit\n    vec2 q = vec2(st(2), st(3)) + uv / scale;\n    float fp = px / scale, r = length(q);\n    vec3 col = vec3(0.006, 0.007, 0.016);\n\n    if (r \u003c 1.0) {\n        float lsc;\n        vec2 F = mockF(q, st(7), lsc);\n        float lnF = 0.5 * log(max(dot(F, F), 1e-37)) + lsc;\n        float lm = lnF * 1.442695;                       // log2|f|\n        float ph = atan(F.y, F.x) / TAU;\n        vec3 hue = palette(ph + 0.12);\n\n        float wm = max(fwidth(lm), 1e-6);\n        float wp = max(min(fwidth(ph), fwidth(fract(ph + 0.5))) * 12.0, 1e-6);\n        float dense = smoothstep(0.45, 1.5, max(wm, wp)); // lines finer than a pixel\n        vec3 c = vec3(0.008, 0.009, 0.022) + hue * (0.015 + 0.03 * fract(lm));\n        c += GOLD * 0.5 * smoothstep(1.4, 0.3, abs(lm - floor(lm + 0.5)) / wm) * (1.0 - dense);\n        c += hue * 0.8 * smoothstep(1.4, 0.3, abs(ph * 12.0 - floor(ph * 12.0 + 0.5)) / wp) * (1.0 - dense);\n        c = mix(c, hue * 0.16 + GOLD * 0.06, dense * 0.85); // their average, as a glow\n        // eruptions: growth (1-|q|) ln|f| ~ c/k^2 near a root of order 2k; a\n        // soft ember right at the rim, where the lines pile up into flowers\n        c += mix(GOLD, vec3(1.0), 0.3) * 0.5 * pow(clamp((1.0 - r) * lnF / 0.4, 0.0, 1.0), 3.0) * smoothstep(0.85, 1.0, r);\n        col = c;\n    }\n    col += GOLD * (0.9 * smoothstep(1.6 * fp, 0.3 * fp, abs(r - 1.0)) + 0.12 * exp(-abs(r - 1.0) / fp * 0.05));\n    O = vec4(col, 1.0);\n}\n","name":"Buffer B","description":"","type":"buffer"},{"inputs":[{"id":"4dXGR8","filepath":"/media/previz/buffer00.png","type":"buffer","channel":0,"sampler":{"filter":"nearest","wrap":"clamp","vflip":"true","srgb":"false","internal":"byte"},"published":1},{"id":"XsXGR8","filepath":"/media/previz/buffer01.png","type":"buffer","channel":1,"sampler":{"filter":"mipmap","wrap":"clamp","vflip":"true","srgb":"false","internal":"byte"},"published":1}],"outputs":[{"id":"4dfGRr","channel":0}],"code":"// Image — bloom from Buffer B's mip chain, tone map, and two text-free sliders.\n// iChannel0 = Buffer A (UI state)   iChannel1 = Buffer B (mipmap)\n\nconst vec3 GOLD = vec3(1.0, 0.66, 0.24), IVORY = vec3(0.95, 0.88, 0.74);\nfloat PX;\n\nfloat st(int i) { return texelFetch(iChannel0, ivec2(i, 0), 0).x; }\n\nvec3 slider(vec2 uv, float x0, float x1, float f, bool hot, bool ticks, vec3 col) {\n    float line = smoothstep(2.0 * PX, 0.5 * PX, length(vec2(uv.x - clamp(uv.x, x0, x1), uv.y - UI_Y)) - 0.002);\n    col = mix(col, vec3(0.3, 0.28, 0.36), line * 0.9);\n    float kx = mix(x0, x1, f);\n    if (ticks) for (int i = 0; i \u003c 3; i++) {\n        float tx = mix(x0, x1, 0.5 * float(i));\n        col = mix(col, IVORY * 0.7, smoothstep(1.5 * PX, 0.3 * PX, length(vec2(uv.x - tx, max(abs(uv.y - UI_Y) - 0.011, 0.0))) - 0.0015));\n    } else col = mix(col, GOLD * 0.8, line * step(uv.x, kx));\n    float dk = length(uv - vec2(kx, UI_Y)) - (hot ? 0.015 : 0.012);\n    col = mix(col, IVORY, smoothstep(PX, -PX, dk));\n    return col + GOLD * 0.3 * exp(-max(dk, 0.0) * 70.0);\n}\n\nvec3 aces(vec3 x) { return clamp((x * (2.51 * x + 0.03)) / (x * (2.43 * x + 0.59) + 0.14), 0.0, 1.0); }\n\nvoid mainImage(out vec4 O, in vec2 fc) {\n    PX = 1.0 / iResolution.y;\n    vec2 uv = fc / iResolution.xy;\n    vec3 c = textureLod(iChannel1, uv, 0.0).rgb, bloom = vec3(0.0);\n    for (int l = 1; l \u003c= 6; l++) {\n        float lod = float(l);\n        vec2 o = exp2(lod) / iResolution.xy * 0.5;\n        bloom += (textureLod(iChannel1, uv + o, lod).rgb + textureLod(iChannel1, uv - o, lod).rgb\n                + textureLod(iChannel1, uv + vec2(o.x, -o.y), lod).rgb + textureLod(iChannel1, uv - vec2(o.x, -o.y), lod).rgb)\n                * 0.25 / (1.0 + 0.4 * lod);\n    }\n    c = aces((c + 0.35 * max(bloom / 3.2 - 0.01, 0.0)) * 1.05);\n    vec2 v = uv - 0.5;\n    c *= 1.0 - 0.45 * dot(v * vec2(1.1, 1.3), v * vec2(1.1, 1.3));\n    vec2 s = (fc - 0.5 * iResolution.xy) * PX;\n    float act = st(8);\n    c = slider(s, MX0, MX1, 0.5 + 0.5 * st(7), act == 2.0, true, c);\n    c = slider(s, ZX0, ZX1, st(5) / ZOOM_MAX, act == 3.0, false, c);\n    O = vec4(pow(c, vec3(1.0 / 2.2)), 1.0);\n}\n","name":"Image","description":"","type":"image"}]}</script>
+<script id="media-json" type="application/json">{}</script>
+<script>
+'use strict';
+// A small Shadertoy-compatible multipass runtime (WebGL2). Supports Common,
+// Buffer A-D (float render targets, self-feedback, nearest/linear/mipmap
+// samplers) and Image. Pass order and read-after-write semantics follow
+// Shadertoy: A, B, C, D, Image; a pass reading a buffer sees its latest output.
+
+const BUFFER_IDS = { '4dXGR8': 0, 'XsXGR8': 1, '4sXGR8': 2, 'XdfGR8': 3,
+                     257: 0, 258: 1, 259: 2, 260: 3 };
+const canvas = document.getElementById('c');
+const errBox = document.getElementById('err');
+const gl = canvas.getContext('webgl2', { antialias: false, alpha: false, preserveDrawingBuffer: true,
+                                         powerPreference: 'high-performance' });
+const params = new URLSearchParams(location.search);
+const manual = params.has('manual');
+
+function fail(msg) { errBox.style.display = 'block'; errBox.textContent += msg + '\n'; console.error(msg); }
+
+if (!gl) fail('WebGL2 is not available in this browser.');
+const hasFloat = gl && gl.getExtension('EXT_color_buffer_float');
+const hasFloatLinear = gl && gl.getExtension('OES_texture_float_linear');
+const FMT = hasFloat && hasFloatLinear
+  ? { internal: gl.RGBA32F, type: gl.FLOAT }
+  : { internal: gl.RGBA16F, type: gl.HALF_FLOAT };
+
+const HEADER = `#version 300 es
+#ifdef GL_ES
+precision highp float;
+precision highp int;
+precision mediump sampler3D;
+#endif
+#define HW_PERFORMANCE 1
+uniform vec3 iResolution;
+uniform float iTime;
+uniform float iChannelTime[4];
+uniform vec4 iMouse;
+uniform vec4 iDate;
+uniform float iSampleRate;
+uniform vec3 iChannelResolution[4];
+uniform int iFrame;
+uniform float iTimeDelta;
+uniform float iFrameRate;
+uniform sampler2D iChannel0;
+uniform sampler2D iChannel1;
+uniform sampler2D iChannel2;
+uniform sampler2D iChannel3;
+out vec4 st_FragColor;
+`;
+const HEADER_LINES = HEADER.split('\n').length - 1;
+
+const VS = `#version 300 es
+in vec2 p; void main() { gl_Position = vec4(p, 0.0, 1.0); }`;
+
+let state = null;   // { passes, targets, ... }
+let time = 0, frame = 0, playing = !manual, lastNow = 0, fpsAcc = 0, fpsN = 0, fps = 0;
+const mouse = [0, 0, 0, 0];
+let mouseDown = false, clickFresh = false;
+
+function compile(type, src, label, commonLines) {
+  const s = gl.createShader(type);
+  gl.shaderSource(s, src);
+  gl.compileShader(s);
+  if (!gl.getShaderParameter(s, gl.COMPILE_STATUS)) {
+    const log = gl.getShaderInfoLog(s) || '';
+    // Map line numbers back to the pass (or Common) source.
+    const mapped = log.replace(/ERROR: 0:(\d+):/g, (_, n) => {
+      let line = +n - HEADER_LINES;
+      if (line <= commonLines) return `ERROR: Common:${line}:`;
+      return `ERROR: ${label}:${line - commonLines}:`;
+    });
+    throw new Error(`[${label}] compile failed\n${mapped}`);
+  }
+  return s;
+}
+
+function program(fsSrc, label, commonLines) {
+  const p = gl.createProgram();
+  gl.attachShader(p, compile(gl.VERTEX_SHADER, VS, 'vertex', 0));
+  gl.attachShader(p, compile(gl.FRAGMENT_SHADER, fsSrc, label, commonLines));
+  gl.bindAttribLocation(p, 0, 'p');
+  gl.linkProgram(p);
+  if (!gl.getProgramParameter(p, gl.LINK_STATUS)) throw new Error(`[${label}] link failed\n${gl.getProgramInfoLog(p)}`);
+  const u = {};
+  for (const n of ['iResolution', 'iTime', 'iMouse', 'iDate', 'iSampleRate', 'iFrame', 'iTimeDelta', 'iFrameRate',
+                   'iChannelResolution', 'iChannelTime', 'iChannel0', 'iChannel1', 'iChannel2', 'iChannel3'])
+    u[n] = gl.getUniformLocation(p, n);
+  return { p, u };
+}
+
+function makeTarget(w, h) {
+  const t = gl.createTexture();
+  gl.bindTexture(gl.TEXTURE_2D, t);
+  const levels = 1 + Math.floor(Math.log2(Math.max(w, h)));
+  gl.texStorage2D(gl.TEXTURE_2D, levels, FMT.internal, w, h);
+  const fb = gl.createFramebuffer();
+  gl.bindFramebuffer(gl.FRAMEBUFFER, fb);
+  gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, t, 0);
+  gl.clearColor(0, 0, 0, 0);
+  gl.clear(gl.COLOR_BUFFER_BIT);
+  gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+  return { t, fb, w, h };
+}
+
+function samplerFor(s) {
+  const smp = gl.createSampler();
+  const f = s && s.filter || 'linear';
+  const wrap = s && s.wrap === 'repeat' ? gl.REPEAT : gl.CLAMP_TO_EDGE;
+  gl.samplerParameteri(smp, gl.TEXTURE_WRAP_S, wrap);
+  gl.samplerParameteri(smp, gl.TEXTURE_WRAP_T, wrap);
+  gl.samplerParameteri(smp, gl.TEXTURE_MAG_FILTER, f === 'nearest' ? gl.NEAREST : gl.LINEAR);
+  gl.samplerParameteri(smp, gl.TEXTURE_MIN_FILTER,
+    f === 'nearest' ? gl.NEAREST : f === 'mipmap' ? gl.LINEAR_MIPMAP_LINEAR : gl.LINEAR);
+  return smp;
+}
+
+// Media textures: only what the page embeds (e.g. a stand-in font atlas).
+const MEDIA = JSON.parse(document.getElementById('media-json').textContent) || {};
+const mediaCache = {};
+function mediaTexture(filepath, sampler) {
+  const key = filepath + JSON.stringify(sampler || {});
+  if (mediaCache[key]) return mediaCache[key];
+  const url = MEDIA[filepath];
+  if (!url) { fail(`no local copy of texture ${filepath}`); return null; }
+  const t = { tex: gl.createTexture(), w: 1, h: 1, ready: false };
+  gl.bindTexture(gl.TEXTURE_2D, t.tex);
+  gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, 1, 1, 0, gl.RGBA, gl.UNSIGNED_BYTE, new Uint8Array(4));
+  const img = new Image();
+  img.onload = () => {
+    gl.bindTexture(gl.TEXTURE_2D, t.tex);
+    gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, sampler && sampler.vflip === 'true');
+    gl.pixelStorei(gl.UNPACK_PREMULTIPLY_ALPHA_WEBGL, false);
+    gl.pixelStorei(gl.UNPACK_COLORSPACE_CONVERSION_WEBGL, gl.NONE);
+    gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, img);
+    gl.generateMipmap(gl.TEXTURE_2D);
+    gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, false);
+    t.w = img.width; t.h = img.height; t.ready = true;
+  };
+  img.src = url;
+  return (mediaCache[key] = t);
+}
+
+function load(json) {
+  errBox.textContent = ''; errBox.style.display = 'none';
+  const sh = json.Shader || json;
+  document.getElementById('title').textContent = sh.info && sh.info.name || '';
+  document.title = (sh.info && sh.info.name) || 'Shader Viewer';
+  const common = sh.renderpass.find((r) => r.type === 'common');
+  const commonCode = common ? common.code + '\n' : '';
+  const commonLines = commonCode ? commonCode.split('\n').length - 1 : 0;
+  const order = ['Buffer A', 'Buffer B', 'Buffer C', 'Buffer D', 'Image'];
+  const passes = [];
+  for (const rp of sh.renderpass) {
+    if (rp.type !== 'buffer' && rp.type !== 'image') continue;
+    const outId = rp.outputs && rp.outputs[0] && rp.outputs[0].id;
+    const target = rp.type === 'image' ? -1 : BUFFER_IDS[outId];
+    const isImage = rp.type === 'image';
+    const src = HEADER + commonCode + rp.code + `
+void main() {
+  vec4 c = vec4(0.0, 0.0, 0.0, 1.0);
+  mainImage(c, gl_FragCoord.xy);
+  ${isImage ? 'c.w = 1.0;' : ''}
+  st_FragColor = c;
+}`;
+    const prog = program(src, rp.name, commonLines);
+    const inputs = (rp.inputs || []).map((inp) => ({
+      channel: inp.channel,
+      buffer: inp.type === 'buffer' || inp.ctype === 'buffer' ? BUFFER_IDS[inp.id] ?? null : null,
+      texture: inp.type === 'texture' || inp.ctype === 'texture' ? mediaTexture(inp.filepath || inp.src, inp.sampler) : null,
+      filter: inp.sampler && inp.sampler.filter,
+      sampler: samplerFor(inp.sampler),
+    }));
+    for (const inp of inputs) if (inp.buffer === null && !inp.texture) fail(`[${rp.name}] unsupported input on channel ${inp.channel}`);
+    passes.push({ name: rp.name, prog, inputs, target, rank: order.indexOf(rp.name) });
+  }
+  passes.sort((a, b) => a.rank - b.rank);
+  const mipBuffers = new Set();
+  for (const p of passes) for (const i of p.inputs) if (i.filter === 'mipmap' && i.buffer !== null) mipBuffers.add(i.buffer);
+  if (state) freeTargets();
+  state = { passes, mipBuffers, targets: [], w: 0, h: 0 };
+  restart();
+}
+
+function freeTargets() {
+  for (const pair of state.targets) for (const t of pair) { gl.deleteTexture(t.t); gl.deleteFramebuffer(t.fb); }
+  state.targets = [];
+}
+
+function resize() {
+  const scale = +document.getElementById('scale').value;
+  const dpr = Math.min(window.devicePixelRatio || 1, 2);
+  const w = Math.max(1, Math.round((params.get('w') || canvas.clientWidth * dpr) * (params.get('w') ? 1 : scale)));
+  const h = Math.max(1, Math.round((params.get('h') || canvas.clientHeight * dpr) * (params.get('h') ? 1 : scale)));
+  if (canvas.width !== w || canvas.height !== h) { canvas.width = w; canvas.height = h; }
+  if (!state || (state.w === w && state.h === h)) return;
+  // Reallocate buffers, preserving their contents like Shadertoy does.
+  const old = state.targets, oldCur = state.cur;
+  state.targets = [0, 1, 2, 3].map(() => [makeTarget(w, h), makeTarget(w, h)]);
+  state.cur = [0, 0, 0, 0];
+  if (old.length) {
+    for (let b = 0; b < 4; b++) {
+      const src = old[b][oldCur[b]];
+      gl.bindFramebuffer(gl.READ_FRAMEBUFFER, src.fb);
+      gl.bindFramebuffer(gl.DRAW_FRAMEBUFFER, state.targets[b][0].fb);
+      gl.blitFramebuffer(0, 0, src.w, src.h, 0, 0, Math.min(src.w, w), Math.min(src.h, h),
+                         gl.COLOR_BUFFER_BIT, gl.NEAREST);
+      for (const t of old[b]) { gl.deleteTexture(t.t); gl.deleteFramebuffer(t.fb); }
+    }
+    gl.bindFramebuffer(gl.READ_FRAMEBUFFER, null);
+    gl.bindFramebuffer(gl.DRAW_FRAMEBUFFER, null);
+  }
+  state.w = w; state.h = h;
+}
+
+function restart() {
+  time = 0; frame = 0;
+  if (!state) return;
+  freeTargets();
+  state.w = state.h = 0;
+  resize();
+}
+
+const quad = gl && gl.createBuffer();
+if (gl) {
+  gl.bindBuffer(gl.ARRAY_BUFFER, quad);
+  gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([-1, -1, 3, -1, -1, 3]), gl.STATIC_DRAW);
+  gl.enableVertexAttribArray(0);
+  gl.vertexAttribPointer(0, 2, gl.FLOAT, false, 0, 0);
+}
+
+function renderFrame(dt, only) {
+  if (!state) return;
+  resize();
+  const { w, h } = state;
+  const now = new Date();
+  const date = [now.getFullYear(), now.getMonth(), now.getDate(),
+                now.getHours() * 3600 + now.getMinutes() * 60 + now.getSeconds() + now.getMilliseconds() / 1000];
+  for (const pass of state.passes) {
+    if (only && !only.includes(pass.name)) continue;
+    const { p, u } = pass.prog;
+    gl.useProgram(p);
+    const texUnits = [];
+    for (let ch = 0; ch < 4; ch++) {
+      const inp = pass.inputs.find((i) => i.channel === ch);
+      gl.activeTexture(gl.TEXTURE0 + ch);
+      if (inp && inp.texture) {
+        gl.bindTexture(gl.TEXTURE_2D, inp.texture.tex);
+        gl.bindSampler(ch, inp.sampler);
+        texUnits.push(inp.texture.w, inp.texture.h, 1);
+      } else if (inp && inp.buffer !== null) {
+        const b = inp.buffer;
+        gl.bindTexture(gl.TEXTURE_2D, state.targets[b][state.cur[b]].t);
+        gl.bindSampler(ch, inp.sampler);
+        texUnits.push(w, h, 1);
+      } else {
+        gl.bindTexture(gl.TEXTURE_2D, null);
+        gl.bindSampler(ch, null);
+        texUnits.push(0, 0, 0);
+      }
+      gl.uniform1i(u['iChannel' + ch], ch);
+    }
+    gl.uniform3f(u.iResolution, w, h, 1);
+    gl.uniform1f(u.iTime, time);
+    gl.uniform1f(u.iTimeDelta, dt);
+    gl.uniform1f(u.iFrameRate, dt > 0 ? 1 / dt : 60);
+    gl.uniform1i(u.iFrame, frame);
+    gl.uniform4f(u.iMouse, mouse[0], mouse[1], mouse[2], mouse[3]);
+    gl.uniform4f(u.iDate, date[0], date[1], date[2], date[3]);
+    gl.uniform1f(u.iSampleRate, 44100);
+    gl.uniform3fv(u.iChannelResolution, texUnits);
+    gl.uniform1fv(u.iChannelTime, [time, time, time, time]);
+    let dst = null;
+    if (pass.target >= 0) {
+      const b = pass.target;
+      const next = 1 - state.cur[b];
+      dst = state.targets[b][next];
+      gl.bindFramebuffer(gl.FRAMEBUFFER, dst.fb);
+    } else {
+      gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+    }
+    gl.viewport(0, 0, w, h);
+    gl.drawArrays(gl.TRIANGLES, 0, 3);
+    if (pass.target >= 0) {
+      const b = pass.target;
+      state.cur[b] = 1 - state.cur[b];
+      if (state.mipBuffers.has(b)) {
+        gl.bindTexture(gl.TEXTURE_2D, dst.t);
+        gl.generateMipmap(gl.TEXTURE_2D);
+      }
+    }
+  }
+  for (let ch = 0; ch < 4; ch++) gl.bindSampler(ch, null);
+  frame++;
+  time += dt;
+  if (mouse[3] > 0) mouse[3] = -mouse[3];
+}
+
+function tick(nowMs) {
+  const now = nowMs / 1000;
+  const dt = lastNow ? Math.min(now - lastNow, 0.1) : 1 / 60;
+  lastNow = now;
+  if (playing) {
+    try { renderFrame(dt); } catch (e) { fail(String(e)); playing = false; }
+    fpsAcc += dt; fpsN++;
+    if (fpsAcc > 0.5) { fps = fpsN / fpsAcc; fpsAcc = 0; fpsN = 0; }
+  }
+  document.getElementById('stats').textContent =
+    `${time.toFixed(2)}s  ${fps.toFixed(0)} fps  ${canvas.width}×${canvas.height}`;
+  requestAnimationFrame(tick);
+}
+
+// Shadertoy mouse convention: xy = current position while held, zw = click
+// position; z < 0 after release, w < 0 after the click frame.
+function setMouse(x, y, down) {
+  if (down && !mouseDown) { mouse[2] = x; mouse[3] = y; }
+  if (down) { mouse[0] = x; mouse[1] = y; }
+  if (!down && mouseDown) { mouse[2] = -Math.abs(mouse[2]); }
+  mouseDown = down;
+}
+function canvasPos(e) {
+  const r = canvas.getBoundingClientRect();
+  return [(e.clientX - r.left) / r.width * canvas.width, (1 - (e.clientY - r.top) / r.height) * canvas.height];
+}
+canvas.addEventListener('pointerdown', (e) => { canvas.setPointerCapture(e.pointerId); setMouse(...canvasPos(e), true); });
+canvas.addEventListener('pointermove', (e) => { if (mouseDown) setMouse(...canvasPos(e), true); });
+canvas.addEventListener('pointerup', (e) => setMouse(...canvasPos(e), false));
+
+const playBtn = document.getElementById('play');
+function setPlaying(v) { playing = v; playBtn.textContent = v ? '❚❚' : '▶'; }
+playBtn.onclick = () => setPlaying(!playing);
+document.getElementById('restart').onclick = restart;
+document.getElementById('scale').onchange = () => { if (state) resize(); };
+document.getElementById('fs').onclick = () => document.fullscreenElement ? document.exitFullscreen() : document.documentElement.requestFullscreen();
+document.getElementById('file').onchange = async (e) => {
+  const f = e.target.files[0];
+  if (!f) return;
+  try { load(JSON.parse(await f.text())); } catch (err) { fail(String(err)); }
+};
+window.addEventListener('keydown', (e) => {
+  if (e.key === ' ') { setPlaying(!playing); e.preventDefault(); }
+  else if (e.key === 'r' || e.key === 'R') restart();
+  else if (e.key === 'f' || e.key === 'F') document.getElementById('fs').click();
+});
+window.addEventListener('dragover', (e) => e.preventDefault());
+window.addEventListener('drop', async (e) => {
+  e.preventDefault();
+  const f = e.dataTransfer.files[0];
+  if (f) try { load(JSON.parse(await f.text())); } catch (err) { fail(String(err)); }
+});
+let idleTimer = 0;
+window.addEventListener('pointermove', () => {
+  document.body.classList.remove('idle');
+  clearTimeout(idleTimer);
+  idleTimer = setTimeout(() => document.body.classList.add('idle'), 2500);
+});
+
+// Hooks for automated rendering (used by tools/render.mjs with ?manual).
+window.ST = {
+  renderFrames(n, dt = 1 / 60, only) { for (let i = 0; i < n; i++) renderFrame(dt, only); gl.finish(); return { time, frame }; },
+  setMouse, restart, load,
+  readBuffer(b, x, y, w, h) {
+    const t = state.targets[b][state.cur[b]];
+    gl.bindFramebuffer(gl.FRAMEBUFFER, t.fb);
+    const out = new Float32Array(w * h * 4);
+    gl.readPixels(x, y, w, h, gl.RGBA, gl.FLOAT, out);
+    gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+    return Array.from(out);
+  },
+  get time() { return time; }, get frame() { return frame; },
+  errors: () => errBox.textContent,
+  mediaReady: () => Object.values(mediaCache).every((t) => t.ready),
+};
+
+if (gl) {
+  const embedded = JSON.parse(document.getElementById('shader-json').textContent);
+  if (embedded) { try { load(embedded); } catch (e) { fail(String(e)); } }
+  if (!manual) requestAnimationFrame(tick);
+  if (manual) document.getElementById('bar').style.display = 'none';
+}
+</script>
+</body>
+</html>

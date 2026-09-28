@@ -1,0 +1,131 @@
+{
+  "ver": "0.1",
+  "info": {
+    "id": "",
+    "date": "0",
+    "viewed": 0,
+    "name": "Mock Theta Field Lines",
+    "description": "Ramanujan's mock theta function f(q) on the unit disk as glowing field lines of phase and modulus. It erupts at every even-order root of unity: pan and zoom into the rim for ever finer flowers; morph f+b / f / f-b.",
+    "likes": 0,
+    "published": "Private",
+    "usePreview": 0,
+    "tags": [
+      "ramanujan",
+      "mocktheta",
+      "domaincoloring",
+      "fieldlines",
+      "interactive"
+    ],
+    "hasliked": 0,
+    "parentid": "",
+    "parentname": ""
+  },
+  "renderpass": [
+    {
+      "inputs": [],
+      "outputs": [],
+      "code": "// MOCK THETA FIELD LINES\n// Ramanujan's third-order mock theta function f(q) = 1 + q/(1+q)^2 + ...\n// on the unit disk, drawn as field lines: coloured lines where its phase is a\n// multiple of 1/12 turn, gold lines where |f| doubles. It erupts at every root\n// of unity of even order; zoom into the rim to see the flowers it makes there.\n// Drag: pan.  Bottom-right: zoom.  Bottom-left: morph f + b | f | f - b, where\n// b is a theta function that calms half of the eruptions each way.\n\nconst float UI_Y = -0.43, UI_HIT = 0.045;\nconst float MX0 = -0.82, MX1 = -0.50;     // morph slider\nconst float ZX0 = 0.50, ZX1 = 0.82;       // zoom slider\nconst float ZOOM_MAX = 8.0;               // log2 of the deepest zoom (x256)\nconst float DISK_R = 0.44;                // disk radius on screen at zoom 1\n",
+      "name": "Common",
+      "description": "",
+      "type": "common"
+    },
+    {
+      "inputs": [
+        {
+          "id": "4dXGR8",
+          "filepath": "/media/previz/buffer00.png",
+          "type": "buffer",
+          "channel": 0,
+          "sampler": {
+            "filter": "nearest",
+            "wrap": "clamp",
+            "vflip": "true",
+            "srgb": "false",
+            "internal": "byte"
+          },
+          "published": 1
+        }
+      ],
+      "outputs": [
+        {
+          "id": "4dXGR8",
+          "channel": 0
+        }
+      ],
+      "code": "// Buffer A — UI state (texels 0..11 of row 0).  iChannel0 = Buffer A (self)\n//  0-1 pan target (disk units), 2-3 pan eased, 4-5 zoom target/eased (log2),\n//  6-7 morph target/eased, 8 active (0, 1 pan, 2 morph, 3 zoom), 10-11 pan at press\n\nfloat st(int i) { return texelFetch(iChannel0, ivec2(i, 0), 0).x; }\n\nvoid mainImage(out vec4 O, in vec2 fc) {\n    ivec2 p = ivec2(fc);\n    O = vec4(0.0);\n    if (p.y != 0 || p.x > 11) return;\n    bool init = iFrame == 0;\n    vec2 tp = init ? vec2(0.0) : vec2(st(0), st(1)), cp = init ? vec2(0.0) : vec2(st(2), st(3));\n    float tz = init ? 0.0 : st(4), cz = init ? 0.0 : st(5);\n    float tm = init ? 0.0 : st(6), cm = init ? 0.0 : st(7);\n    float act = init ? 0.0 : st(8);\n    vec2 p0 = init ? vec2(0.0) : vec2(st(10), st(11));\n    float px = 1.0 / iResolution.y;\n    vec2 ms = (iMouse.xy - 0.5 * iResolution.xy) * px;\n    vec2 ck = (abs(iMouse.zw) - 0.5 * iResolution.xy) * px;\n    if (iMouse.z > 0.0) {\n        if (iMouse.w > 0.0) {\n            bool onUI = abs(ck.y - UI_Y) < UI_HIT;\n            act = onUI && ck.x > MX0 - 0.03 && ck.x < MX1 + 0.03 ? 2.0\n                : onUI && ck.x > ZX0 - 0.03 && ck.x < ZX1 + 0.03 ? 3.0 : 1.0;\n            p0 = tp;\n        }\n        if (act == 1.0) tp = p0 - (ms - ck) / (DISK_R * exp2(cz));\n        if (act == 2.0) tm = mix(-1.0, 1.0, clamp((ms.x - MX0) / (MX1 - MX0), 0.0, 1.0));\n        if (act == 3.0) tz = ZOOM_MAX * clamp((ms.x - ZX0) / (ZX1 - ZX0), 0.0, 1.0);\n    } else {\n        act = 0.0;\n        tm = floor(tm + 0.5);                       // morph settles on f+b, f, f-b\n    }\n    tp = clamp(tp, vec2(-1.1), vec2(1.1));\n    float k = 1.0 - exp(-6.0 * clamp(iTimeDelta, 0.0, 0.1));\n    cp += (tp - cp) * k; cz += (tz - cz) * k; cm += (tm - cm) * k;\n    O.x = p.x == 0 ? tp.x : p.x == 1 ? tp.y : p.x == 2 ? cp.x : p.x == 3 ? cp.y : p.x == 4 ? tz : p.x == 5 ? cz\n        : p.x == 6 ? tm : p.x == 7 ? cm : p.x == 8 ? act : p.x == 10 ? p0.x : p.x == 11 ? p0.y : 0.0;\n}\n",
+      "name": "Buffer A",
+      "description": "",
+      "type": "buffer"
+    },
+    {
+      "inputs": [
+        {
+          "id": "4dXGR8",
+          "filepath": "/media/previz/buffer00.png",
+          "type": "buffer",
+          "channel": 0,
+          "sampler": {
+            "filter": "nearest",
+            "wrap": "clamp",
+            "vflip": "true",
+            "srgb": "false",
+            "internal": "byte"
+          },
+          "published": 1
+        }
+      ],
+      "outputs": [
+        {
+          "id": "XsXGR8",
+          "channel": 0
+        }
+      ],
+      "code": "// Buffer B — the field lines, in HDR (bloomed by Image).\n// iChannel0 = Buffer A (UI state)\n//\n// One series evaluation per pixel: line widths come from fwidth() rather than\n// extra samples, and the sums are renormalised as they grow so the eruptions\n// never overflow a float, however deep the zoom.\n\nconst vec3 GOLD = vec3(1.0, 0.66, 0.24);\nconst float TAU = 6.28318531;\n\nfloat st(int i) { return texelFetch(iChannel0, ivec2(i, 0), 0).x; }\nvec2 cmul(vec2 a, vec2 b) { return vec2(a.x * b.x - a.y * b.y, a.x * b.y + a.y * b.x); }\nvec2 cdiv(vec2 a, vec2 b) { return vec2(a.x * b.x + a.y * b.y, a.y * b.x - a.x * b.y) / dot(b, b); }\n\n// f - s b = (1-s) A - 2(1+s) B via Watson (f = A - 2B, b = A + 2B): no\n// cancellation. Returns the value scaled by e^-lsc.\nvec2 mockF(vec2 q, float s, out float lsc) {\n    vec2 one = vec2(1.0, 0.0), q2 = cmul(q, q), qp = q;\n    vec2 a = cdiv(-q, one + q2), b = -cdiv(q, one + q);\n    vec2 A = one + a, B = b;\n    lsc = 0.0;\n    for (int n = 2; n < 360; n++) {\n        qp = cmul(qp, q2);                              // q^(2n-1)\n        a = cmul(a, cdiv(-qp, one + cmul(qp, q)));\n        b = cmul(b, cdiv(-qp, one + qp));\n        A += a; B += b;\n        if (max(dot(A, A), dot(B, B)) > 1e24) { a *= 1e-12; b *= 1e-12; A *= 1e-12; B *= 1e-12; lsc += 27.631021; }\n        if (n > 4 && dot(qp, qp) < 1e-14 * (1.0 + dot(a, a) + dot(b, b))) break;\n    }\n    return (1.0 - s) * A - 2.0 * (1.0 + s) * B;\n}\n\nvec3 palette(float h) {                                 // gold, saffron, crimson, violet, peacock\n    h = fract(h) * 5.0;\n    vec3 c = mix(vec3(1.1, 0.73, 0.26), vec3(1.0, 0.42, 0.1), smoothstep(0.0, 1.0, h));\n    c = mix(c, vec3(0.88, 0.08, 0.13), smoothstep(1.0, 2.0, h));\n    c = mix(c, vec3(0.42, 0.1, 0.62), smoothstep(2.0, 3.0, h));\n    c = mix(c, vec3(0.06, 0.78, 0.86), smoothstep(3.0, 4.0, h));\n    return mix(c, vec3(1.1, 0.73, 0.26), smoothstep(4.0, 5.0, h));\n}\n\nvoid mainImage(out vec4 O, in vec2 fc) {\n    float px = 1.0 / iResolution.y;\n    vec2 uv = (fc - 0.5 * iResolution.xy) * px;\n    float scale = DISK_R * exp2(st(5));                  // screen units per disk unit\n    vec2 q = vec2(st(2), st(3)) + uv / scale;\n    float fp = px / scale, r = length(q);\n    vec3 col = vec3(0.006, 0.007, 0.016);\n\n    if (r < 1.0) {\n        float lsc;\n        vec2 F = mockF(q, st(7), lsc);\n        float lnF = 0.5 * log(max(dot(F, F), 1e-37)) + lsc;\n        float lm = lnF * 1.442695;                       // log2|f|\n        float ph = atan(F.y, F.x) / TAU;\n        vec3 hue = palette(ph + 0.12);\n\n        float wm = max(fwidth(lm), 1e-6);\n        float wp = max(min(fwidth(ph), fwidth(fract(ph + 0.5))) * 12.0, 1e-6);\n        float dense = smoothstep(0.45, 1.5, max(wm, wp)); // lines finer than a pixel\n        vec3 c = vec3(0.008, 0.009, 0.022) + hue * (0.015 + 0.03 * fract(lm));\n        c += GOLD * 0.5 * smoothstep(1.4, 0.3, abs(lm - floor(lm + 0.5)) / wm) * (1.0 - dense);\n        c += hue * 0.8 * smoothstep(1.4, 0.3, abs(ph * 12.0 - floor(ph * 12.0 + 0.5)) / wp) * (1.0 - dense);\n        c = mix(c, hue * 0.16 + GOLD * 0.06, dense * 0.85); // their average, as a glow\n        // eruptions: growth (1-|q|) ln|f| ~ c/k^2 near a root of order 2k; a\n        // soft ember right at the rim, where the lines pile up into flowers\n        c += mix(GOLD, vec3(1.0), 0.3) * 0.5 * pow(clamp((1.0 - r) * lnF / 0.4, 0.0, 1.0), 3.0) * smoothstep(0.85, 1.0, r);\n        col = c;\n    }\n    col += GOLD * (0.9 * smoothstep(1.6 * fp, 0.3 * fp, abs(r - 1.0)) + 0.12 * exp(-abs(r - 1.0) / fp * 0.05));\n    O = vec4(col, 1.0);\n}\n",
+      "name": "Buffer B",
+      "description": "",
+      "type": "buffer"
+    },
+    {
+      "inputs": [
+        {
+          "id": "4dXGR8",
+          "filepath": "/media/previz/buffer00.png",
+          "type": "buffer",
+          "channel": 0,
+          "sampler": {
+            "filter": "nearest",
+            "wrap": "clamp",
+            "vflip": "true",
+            "srgb": "false",
+            "internal": "byte"
+          },
+          "published": 1
+        },
+        {
+          "id": "XsXGR8",
+          "filepath": "/media/previz/buffer01.png",
+          "type": "buffer",
+          "channel": 1,
+          "sampler": {
+            "filter": "mipmap",
+            "wrap": "clamp",
+            "vflip": "true",
+            "srgb": "false",
+            "internal": "byte"
+          },
+          "published": 1
+        }
+      ],
+      "outputs": [
+        {
+          "id": "4dfGRr",
+          "channel": 0
+        }
+      ],
+      "code": "// Image — bloom from Buffer B's mip chain, tone map, and two text-free sliders.\n// iChannel0 = Buffer A (UI state)   iChannel1 = Buffer B (mipmap)\n\nconst vec3 GOLD = vec3(1.0, 0.66, 0.24), IVORY = vec3(0.95, 0.88, 0.74);\nfloat PX;\n\nfloat st(int i) { return texelFetch(iChannel0, ivec2(i, 0), 0).x; }\n\nvec3 slider(vec2 uv, float x0, float x1, float f, bool hot, bool ticks, vec3 col) {\n    float line = smoothstep(2.0 * PX, 0.5 * PX, length(vec2(uv.x - clamp(uv.x, x0, x1), uv.y - UI_Y)) - 0.002);\n    col = mix(col, vec3(0.3, 0.28, 0.36), line * 0.9);\n    float kx = mix(x0, x1, f);\n    if (ticks) for (int i = 0; i < 3; i++) {\n        float tx = mix(x0, x1, 0.5 * float(i));\n        col = mix(col, IVORY * 0.7, smoothstep(1.5 * PX, 0.3 * PX, length(vec2(uv.x - tx, max(abs(uv.y - UI_Y) - 0.011, 0.0))) - 0.0015));\n    } else col = mix(col, GOLD * 0.8, line * step(uv.x, kx));\n    float dk = length(uv - vec2(kx, UI_Y)) - (hot ? 0.015 : 0.012);\n    col = mix(col, IVORY, smoothstep(PX, -PX, dk));\n    return col + GOLD * 0.3 * exp(-max(dk, 0.0) * 70.0);\n}\n\nvec3 aces(vec3 x) { return clamp((x * (2.51 * x + 0.03)) / (x * (2.43 * x + 0.59) + 0.14), 0.0, 1.0); }\n\nvoid mainImage(out vec4 O, in vec2 fc) {\n    PX = 1.0 / iResolution.y;\n    vec2 uv = fc / iResolution.xy;\n    vec3 c = textureLod(iChannel1, uv, 0.0).rgb, bloom = vec3(0.0);\n    for (int l = 1; l <= 6; l++) {\n        float lod = float(l);\n        vec2 o = exp2(lod) / iResolution.xy * 0.5;\n        bloom += (textureLod(iChannel1, uv + o, lod).rgb + textureLod(iChannel1, uv - o, lod).rgb\n                + textureLod(iChannel1, uv + vec2(o.x, -o.y), lod).rgb + textureLod(iChannel1, uv - vec2(o.x, -o.y), lod).rgb)\n                * 0.25 / (1.0 + 0.4 * lod);\n    }\n    c = aces((c + 0.35 * max(bloom / 3.2 - 0.01, 0.0)) * 1.05);\n    vec2 v = uv - 0.5;\n    c *= 1.0 - 0.45 * dot(v * vec2(1.1, 1.3), v * vec2(1.1, 1.3));\n    vec2 s = (fc - 0.5 * iResolution.xy) * PX;\n    float act = st(8);\n    c = slider(s, MX0, MX1, 0.5 + 0.5 * st(7), act == 2.0, true, c);\n    c = slider(s, ZX0, ZX1, st(5) / ZOOM_MAX, act == 3.0, false, c);\n    O = vec4(pow(c, vec3(1.0 / 2.2)), 1.0);\n}\n",
+      "name": "Image",
+      "description": "",
+      "type": "image"
+    }
+  ]
+}
