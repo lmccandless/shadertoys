@@ -1,4 +1,4 @@
-// Image — bloom from Buffer B's mip chain, tone map, and two text-free sliders.
+// Image — bloom from Buffer B's mip chain, tone map, and the morph slider.
 // iChannel0 = Buffer A (UI state)   iChannel1 = Buffer B (mipmap)
 
 const vec3 GOLD = vec3(1.0, 0.66, 0.24), IVORY = vec3(0.95, 0.88, 0.74);
@@ -36,8 +36,6 @@ void mainImage(out vec4 O, in vec2 fc) {
     vec2 v = uv - 0.5;
     c *= 1.0 - 0.45 * dot(v * vec2(1.1, 1.3), v * vec2(1.1, 1.3));
     vec2 s = (fc - 0.5 * iResolution.xy) * PX;
-    float act = st(8);
-    c = slider(s, MX0, MX1, 0.5 + 0.5 * st(7), act == 2.0, true, c);
-    c = slider(s, ZX0, ZX1, st(5) / ZOOM_MAX, act == 3.0, false, c);
+    c = slider(s, MX0, MX1, 0.5 + 0.5 * st(5), st(6) == 2.0, true, c);
     O = vec4(pow(c, vec3(1.0 / 2.2)), 1.0);
 }

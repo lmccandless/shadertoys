@@ -19,7 +19,7 @@ vec2 mockF(vec2 q, float s, out float lsc) {
     vec2 a = cdiv(-q, one + q2), b = -cdiv(q, one + q);
     vec2 A = one + a, B = b;
     lsc = 0.0;
-    for (int n = 2; n < 360; n++) {
+    for (int n = 2; n < 700; n++) {
         qp = cmul(qp, q2);                              // q^(2n-1)
         a = cmul(a, cdiv(-qp, one + cmul(qp, q)));
         b = cmul(b, cdiv(-qp, one + qp));
@@ -42,14 +42,14 @@ vec3 palette(float h) {                                 // gold, saffron, crimso
 void mainImage(out vec4 O, in vec2 fc) {
     float px = 1.0 / iResolution.y;
     vec2 uv = (fc - 0.5 * iResolution.xy) * px;
-    float scale = DISK_R * exp2(st(5));                  // screen units per disk unit
-    vec2 q = vec2(st(2), st(3)) + uv / scale;
+    float scale = DISK_R * exp2(st(2));                  // screen units per disk unit
+    vec2 q = vec2(st(0), st(1)) + uv / scale;
     float fp = px / scale, r = length(q);
     vec3 col = vec3(0.006, 0.007, 0.016);
 
     if (r < 1.0) {
         float lsc;
-        vec2 F = mockF(q, st(7), lsc);
+        vec2 F = mockF(q, st(5), lsc);
         float lnF = 0.5 * log(max(dot(F, F), 1e-37)) + lsc;
         float lm = lnF * 1.442695;                       // log2|f|
         float ph = atan(F.y, F.x) / TAU;

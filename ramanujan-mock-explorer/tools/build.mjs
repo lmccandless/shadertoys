@@ -16,7 +16,7 @@ const shader = {
   info: {
     id: '', date: '0', viewed: 0,
     name: 'Mock Theta Field Lines',
-    description: "Ramanujan's mock theta function f(q) on the unit disk as glowing field lines of phase and modulus. It erupts at every even-order root of unity: pan and zoom into the rim for ever finer flowers; morph f+b / f / f-b.",
+    description: "Ramanujan's mock theta function f(q) on the unit disk as glowing field lines of phase and modulus. It erupts at every even-order root of unity: click and hold to zoom into the rim for ever finer flowers; morph f+b / f / f-b.",
     likes: 0, published: 'Private', usePreview: 0,
     tags: ['ramanujan', 'mocktheta', 'domaincoloring', 'fieldlines', 'interactive'],
     hasliked: 0, parentid: '', parentname: '',
