@@ -1,6 +1,6 @@
 {
-  "project_sha256": "21917ce5d546a47cb5a19dc52aebf04ac713895f332cec37fddf8c7a2f550499",
-  "started": "2026-09-29T04:19:21.333Z",
+  "project_sha256": "18a6cab252d5422aea22b39b9f66fa04ea5b3b1ab9393442215efe59a3b44ff1",
+  "started": "2026-09-29T04:30:15.788Z",
   "results": [
     {
       "test": "portrait",
@@ -62,7 +62,7 @@
       },
       "probes": [],
       "passed": true,
-      "wall_seconds": 18.5
+      "wall_seconds": 17.3
     },
     {
       "test": "left",
@@ -122,7 +122,7 @@
         }
       ],
       "passed": true,
-      "wall_seconds": 6.5
+      "wall_seconds": 6.9
     },
     {
       "test": "reset",
@@ -152,7 +152,7 @@
         }
       ],
       "passed": true,
-      "wall_seconds": 12.4
+      "wall_seconds": 12.3
     }
   ]
 }

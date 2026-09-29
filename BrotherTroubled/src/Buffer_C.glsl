@@ -77,6 +77,34 @@ vec3 bumpNormal(vec3 n,vec3 p,float height,float strength) {
     vec3 grad=(dFdx(height)*r1+dFdy(height)*r2)/max(abs(det),0.000001)*sign(det);
     return normalize(n-clamp(grad,vec3(-5),vec3(5))*strength);
 }
+// Bristle dashes laid on a surface, in world units. The pattern is a property of the paint on the object,
+// so it moves, foreshortens and occludes with it. Each dash fades to its average (zero) once it becomes
+// thinner than a pixel, so distant or grazing surfaces do not shimmer while the camera orbits.
+float dashes(vec2 q,float cell,float seed,float ang,float spread,float len,float wid,float density) {
+    float fw=max(length(dFdx(q)),length(dFdy(q)));
+    float lod=1.0-smoothstep(0.6,1.4,fw/wid);
+    if(lod<=0.0) return 0.0;
+    float acc=0.0;
+    vec2 g=floor(q/cell);
+    for(int j=-1;j<=1;j++) for(int i=-1;i<=1;i++) {
+        vec2 id=g+vec2(float(i),float(j));
+        vec3 r=vec3(hash12(id+seed),hash12(id+seed+17.0),hash12(id+seed+41.0));
+        if(r.z>density) continue;
+        vec2 c=(id+0.15+0.7*r.xy)*cell;
+        vec2 d=rot(ang+(r.x-0.5)*spread)*(q-c);
+        float along=1.0-smoothstep(len*0.55,len,abs(d.x));
+        float across=1.0-smoothstep(wid,wid*2.0,abs(d.y+(r.y-0.5)*0.5*d.x*d.x/len));
+        acc+=(r.y>0.46?1.0:-1.0)*along*across*(0.55+0.45*r.z/density);
+    }
+    return clamp(acc,-1.0,1.0)*lod;
+}
+// Fine dry-brush tooth on a surface: value noise in world space, band-limited by the pixel footprint.
+float tooth(vec3 p,vec3 n,float freq) {
+    vec3 w=pow(abs(n),vec3(4.0)); w/=dot(w,vec3(1));
+    float fw=length(fwidth(p))*freq;
+    float v=w.z*noise2(p.xy*freq)+w.x*noise2(p.zy*freq+7.1)+w.y*noise2(p.xz*freq+3.7);
+    return (v-0.5)*(1.0-smoothstep(0.35,0.9,fw));
+}
 float straw(vec2 p) {
     float aa=clamp(3.4*max(length(dFdx(p)),length(dFdy(p))),0.004,0.25);
     vec2 cell=floor(p*3.4),q=fract(p*3.4)-0.5;
@@ -294,6 +322,24 @@ void mainImage(out vec4 O,in vec2 F) {
     } else {
         albedo=srgb(vec3(0.30,0.22,0.12))*(0.6+0.6*fine);
         bump=texNoise(p.xy*vec2(2.7,0.16))*0.02;bumpStrength=0.7;
+    }
+    // Surface-anchored brushwork (formerly screen-space in the Image pass).
+    if(mat<1.5) {
+        vec3 w=pow(abs(originalN),vec3(4.0)); w/=dot(w,vec3(1));
+        float a=0.0;
+        if(w.z>0.05) a+=w.z*clamp(dashes(p.xy,0.066,3.0,1.30,1.0,0.10,0.012,0.62)+0.8*dashes(p.xy+0.37,0.044,29.0,1.15,1.4,0.066,0.010,0.55),-1.0,1.0);
+        if(w.x>0.05) a+=w.x*clamp(dashes(p.zy,0.066,5.0,1.35,1.0,0.10,0.012,0.62)+0.8*dashes(p.zy+0.37,0.044,31.0,1.20,1.4,0.066,0.010,0.55),-1.0,1.0);
+        if(w.y>0.05) a+=w.y*clamp(dashes(p.xz,0.066,9.0,0.15,1.0,0.10,0.012,0.62)+0.8*dashes(p.xz+0.37,0.044,37.0,0.30,1.4,0.066,0.010,0.55),-1.0,1.0);
+        albedo=mix(albedo,albedo*vec3(0.62,0.62,0.42),0.85*sat(-a));
+        albedo=mix(albedo,albedo*1.24+0.006,0.80*sat(a));
+        albedo*=1.0+0.50*tooth(p,originalN,95.0)+0.30*tooth(p,originalN,230.0);
+    } else if(mat>1.5 && mat<2.5) {
+        float a=dashes(p.xz,0.17,5.0,0.10,2.2,0.22,0.014,0.36)+0.8*dashes(p.xz+0.53,0.11,61.0,0.55,3.0,0.12,0.012,0.28);
+        albedo=mix(albedo,albedo*vec3(0.61,0.55,0.43),0.48*sat(-a));
+        albedo=mix(albedo,albedo*vec3(1.45,1.40,1.25),0.48*sat(a));
+        albedo*=1.0+0.60*tooth(p,originalN,40.0)+0.30*tooth(p,originalN,110.0);
+    } else {
+        albedo*=1.0+0.50*tooth(p,originalN,60.0)+0.25*tooth(p,originalN,150.0);
     }
     bumpStrength*=1.0-smoothstep(19.0,37.0,g.b);
     n=bumpNormal(n,p,bump,bumpStrength);
