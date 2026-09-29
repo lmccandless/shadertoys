@@ -27,11 +27,11 @@ vec3 paintSky(vec2 sp) {
     float side=1.0-smoothstep(0.30,1.0,length((q-vec2(86.0,196.0))/vec2(80.0,46.0)));
     float cloud=sat(max(max(bank,billow*1.1),max(lobe*1.2,side*0.95))+0.34*(n1-0.5)+0.18*(n2-0.5));
     cloud=smoothstep(0.22,0.80,cloud);
-    vec3 teal=mix(srgb(vec3(0.55,0.635,0.465)),srgb(vec3(0.66,0.715,0.52)),smoothstep(0.0,190.0,sp.y)*0.9+0.12*n1);
-    teal=mix(teal,srgb(vec3(0.60,0.665,0.49)),(1.0-smoothstep(-40.0,60.0,sp.x))*0.5);
+    vec3 teal=mix(srgb(vec3(0.53,0.65,0.49)),srgb(vec3(0.66,0.73,0.53)),smoothstep(0.0,190.0,sp.y)*0.9+0.12*n1);
+    teal=mix(teal,srgb(vec3(0.60,0.68,0.50)),(1.0-smoothstep(-40.0,60.0,sp.x))*0.5);
     // Sunlit warm cream on the right/upper side of the billows, cooler grey-lilac underneath.
     float lit=sat(0.55+0.55*((q.x-140.0)/200.0)-0.55*((q.y-150.0)/170.0)+0.35*(n2-0.5));
-    vec3 cream=mix(srgb(vec3(0.70,0.655,0.50)),srgb(vec3(0.86,0.775,0.51)),lit);
+    vec3 cream=mix(srgb(vec3(0.70,0.655,0.50)),srgb(vec3(0.90,0.79,0.50)),lit);
     cream=mix(cream,srgb(vec3(0.80,0.76,0.56)),0.55*bank*(1.0-billow));
     float floorShade=smoothstep(215.0,345.0,sp.y);
     cream=mix(cream,srgb(vec3(0.66,0.635,0.50)),floorShade*0.9);
@@ -115,10 +115,10 @@ void mainImage(out vec4 O,in vec2 F) {
         vec4 hair=pigment(iChannel1,coat+vec2(p.z*0.14,0));
         float wisps=texNoise(coat*vec2(3.2,0.72)+vec2(0.07,0.11));
         float warm=0.46*broad+0.34*medium+0.20*hair.b;
-        vec3 cream=srgb(vec3(0.95,0.895,0.70));
-        vec3 grey=srgb(vec3(0.80,0.78,0.63));
-        albedo=mix(grey,cream,smoothstep(0.22,0.80,warm));
-        float fleck=smoothstep(0.60,0.74,0.6*hair.g+0.4*medium)*0.55;
+        vec3 cream=srgb(vec3(0.95,0.865,0.665));
+        vec3 grey=srgb(vec3(0.80,0.75,0.60));
+        albedo=mix(grey,cream,smoothstep(0.10,0.70,warm));
+        float fleck=smoothstep(0.62,0.78,0.6*hair.g+0.4*medium)*0.30;
         albedo=mix(albedo,srgb(vec3(0.70,0.69,0.62)),fleck);
         albedo*=0.96+0.08*wisps;
         // Short, loaded brush dabs running down the flank, lighter ivory ridges between darker ochre gaps.
@@ -129,17 +129,23 @@ void mainImage(out vec4 O,in vec2 F) {
         vec2 pp=pxOf(p);
         float chestShade=exp(-sq((pp.x-238.0)/34.0)-sq((pp.y-440.0)/70.0));
         albedo*=1.0-0.30*chestShade;
-        albedo*=1.0-0.09*sat(n.y);
+        albedo*=1.0-0.16*sat(n.y);
         float legShade=1.0-smoothstep(0.75,1.30,p.y);
         albedo*=1.0-0.40*legShade;
         albedo*=1.0-0.20*legShade*smoothstep(0.9,1.6,p.x);
         // Skin around the eye is pigmented, the muzzle is pinkish, the legs are cooler and thinner-haired.
-        vec2 eye=(p.xy-P(180.5,341.0,0.0).xy)/vec2(PX(11.0),PX(9.5));
-        float orbit=exp(-dot(eye,eye)*1.6)*smoothstep(0.10,0.22,p.z);
-        albedo=mix(albedo,srgb(vec3(0.50,0.27,0.13)),orbit*0.85);
+        vec2 eye=(p.xy-P(180.5,341.0,0.0).xy)/vec2(PX(14.5),PX(12.0));
+        float orbit=exp(-pow(dot(eye,eye),1.25)*1.5)*smoothstep(0.10,0.22,p.z);
+        albedo=mix(albedo,srgb(vec3(0.40,0.20,0.10)),orbit*0.92);
+        // the soft brow crease above the eye and the mouth line along the jaw
+        vec2 pf=pxOf(p);
+        float mouth=exp(-sq((pf.y-(383.5+0.06*(pf.x-145.0)))/1.5))*smoothstep(146.0,153.0,pf.x)*(1.0-smoothstep(170.0,186.0,pf.x))*smoothstep(0.06,0.14,p.z);
+        albedo=mix(albedo,srgb(vec3(0.42,0.30,0.22)),mouth*0.75);
         vec2 mz=(p.xy-P(140.0,378.0,0.0).xy)/vec2(PX(9.5),PX(8.0));
         float nose=exp(-dot(mz,mz)*1.3);
-        albedo=mix(albedo,srgb(vec3(0.68,0.42,0.36)),nose*0.9);
+        albedo=mix(albedo,srgb(vec3(0.66,0.40,0.34)),nose*0.9);
+        vec2 nz=(p.xy-P(141.5,375.0,0.0).xy)/vec2(PX(3.2),PX(2.6));
+        albedo=mix(albedo,srgb(vec3(0.30,0.16,0.14)),exp(-dot(nz,nz)*1.4)*smoothstep(0.05,0.16,p.z)*0.85);
         float belly=1.0-smoothstep(1.05,1.75,p.y);
         albedo=mix(albedo,albedo*vec3(0.80,0.78,0.66),0.35*belly);
         bump=hair.g*0.007+wisps*0.005+fine*0.003;
@@ -170,7 +176,9 @@ void mainImage(out vec4 O,in vec2 F) {
         float woodFoot=smoothstep(34.0,44.0,zz);
         albedo=mix(albedo,srgb(vec3(0.19,0.21,0.11)),woodFoot*(0.35+0.6*leftMask));
         float under=exp(-sq((p.x-0.15)*0.42)-sq((p.z+0.05)*1.15));
-        ao=1.0-0.35*under;
+        ao=1.0-0.20*under;
+        albedo*=1.0+0.14*exp(-sq((p.x+1.0)*0.30)-sq((p.z-2.6)*0.32));
+        albedo*=1.0-0.28*smoothstep(0.8,3.4,p.x);
         float wall=exp(-max(p.z-WALL_Z,0.0)*1.6)*smoothstep(-1.7,-1.2,p.x);
         ao*=1.0-0.45*wall;
         // Under the roof the barn floor sits in soft shade; daylight falls in only through the open bay.
@@ -216,8 +224,8 @@ void mainImage(out vec4 O,in vec2 F) {
             // The painted post: warm reddish where the light rakes its left edge, umber toward the wall, and
             // sunk in the eave's shadow above the brace foot (painting y < 175 px).
             vec2 pp2=pxOf(p);
-            albedo*=1.35;
-            albedo=mix(albedo,srgb(vec3(0.56,0.33,0.18)),0.70*(1.0-smoothstep(293.0,314.0,pp2.x)));
+            albedo*=1.55;
+            albedo=mix(albedo,srgb(vec3(0.60,0.35,0.19)),0.70*(1.0-smoothstep(293.0,314.0,pp2.x)));
             albedo*=1.0-0.28*smoothstep(316.0,332.0,pp2.x);
             albedo*=1.0-0.50*smoothstep(180.0,140.0,pp2.y)*smoothstep(298.0,312.0,pp2.x);
             ao=0.9;
@@ -240,7 +248,10 @@ void mainImage(out vec4 O,in vec2 F) {
         rough=0.08;
     } else if(mat<7.5) {
         float tip=sat((-p.x-3.05)*3.0);
-        albedo=mix(srgb(vec3(0.90,0.83,0.63)),srgb(vec3(0.48,0.38,0.22)),tip*0.85);
+        albedo=mix(srgb(vec3(0.90,0.83,0.63)),srgb(vec3(0.42,0.32,0.18)),tip*0.9);
+        // The poll boss is ringed with warm ochre where the horn horn meets the hair.
+        float rim=smoothstep(0.55,0.95,1.0-abs(originalN.y))*(1.0-tip);
+        albedo=mix(albedo,srgb(vec3(0.80,0.56,0.28)),rim*0.55);
         albedo*=0.92+0.16*medium;rough=0.42;
     } else if(mat<8.5) {
         // Hoof: near-black horn over a pale, hairy pastern band.
@@ -257,10 +268,11 @@ void mainImage(out vec4 O,in vec2 F) {
         if(g.b>30.0) {
             // Far woods: dark, blue-green masses with a faint lighter dapple.
             albedo=mix(srgb(vec3(0.15,0.185,0.115)),srgb(vec3(0.27,0.30,0.19)),smoothstep(0.3,0.8,foliage));
+            albedo*=0.50+0.50*smoothstep(0.05,1.6,p.y);
         } else {
             // The near elm: olive-khaki where the light catches it, deep brown-green in the hollows.
-            albedo=mix(srgb(vec3(0.17,0.175,0.09)),srgb(vec3(0.52,0.47,0.27)),smoothstep(0.25,0.85,foliage));
-            albedo*=0.9+0.25*broad;
+            albedo=mix(srgb(vec3(0.20,0.19,0.10)),srgb(vec3(0.62,0.54,0.31)),smoothstep(0.25,0.85,foliage));
+            albedo*=0.95+0.25*broad;
         }
         bump=0.038*leaves.g+0.013*fine;bumpStrength=0.50;
         ao=0.85;
@@ -280,7 +292,7 @@ void mainImage(out vec4 O,in vec2 F) {
         albedo*=0.85+0.5*broad;
         bump=reed.g*0.03;bumpStrength=1.0;ao=0.9;
     } else {
-        albedo=srgb(vec3(0.20,0.145,0.08))*(0.6+0.6*fine);
+        albedo=srgb(vec3(0.30,0.22,0.12))*(0.6+0.6*fine);
         bump=texNoise(p.xy*vec2(2.7,0.16))*0.02;bumpStrength=0.7;
     }
     bumpStrength*=1.0-smoothstep(19.0,37.0,g.b);
@@ -297,10 +309,10 @@ void mainImage(out vec4 O,in vec2 F) {
     vec3 keyCol=srgb(vec3(1.0,0.93,0.76))*1.05;
     float shadowFloor=0.10;
     if(isHide) { ambient*=1.25; keyCol*=0.95; shadowFloor=0.42; }
-    if(mat>1.5 && mat<2.5) shadowFloor=0.36;   // the painted ground is only gently darkened by the cow
+    if(mat>1.5 && mat<2.5) shadowFloor=0.52;   // the painted ground is only gently darkened by the cow
     if(isWall) keyCol*=0.0;                      // the wall is lit by reflected glow, not by the key
     vec3 lit=albedo*(ambient*ao+keyCol*ndl*mix(shadowFloor,1.0,shadow));
-    if(isWall) lit=albedo*(0.50*ao+1.85*glow*ao)*srgb(vec3(1.0,0.90,0.74));
+    if(isWall) lit=albedo*(0.62*ao+1.85*glow*ao)*srgb(vec3(1.0,0.90,0.74));
     vec3 hv=normalize(light-rd);
     float spec=pow(max(dot(n,hv),0.0),mix(110.0,8.0,rough))*mix(0.50,0.014,rough)*ndl*shadow;
     lit+=vec3(1.0,0.93,0.70)*spec;

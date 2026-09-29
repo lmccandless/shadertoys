@@ -7,9 +7,10 @@ Boxes are (x0, y0, x1, y1) in painting pixels (800x668). The last column is the 
 import sys
 import numpy as np
 from PIL import Image
-SP = '/tmp/claude-0/-home-user-shadertoys/73190e96-f277-5e82-9cca-4ac05c816107/scratchpad'
+import os
+REF = os.environ.get('BT_REFERENCE', 'reference/painting.jpg')  # the 800x668 source painting (not shipped)
 ren = np.asarray(Image.open(sys.argv[1]).convert('RGB').resize((800, 668), Image.LANCZOS)).astype(float) / 255
-ref = np.asarray(Image.open(sys.argv[2] if len(sys.argv) > 2 else SP + '/reference.jpg').convert('RGB')).astype(float) / 255
+ref = np.asarray(Image.open(sys.argv[2] if len(sys.argv) > 2 else REF).convert('RGB')).astype(float) / 255
 R = {
  'sky teal TL':      (0, 0, 120, 80),   'sky teal mid':  (120, 40, 240, 110),
  'cloud lobe':       (170, 110, 235, 170), 'cloud left':   (0, 150, 120, 230),

@@ -31,11 +31,11 @@ vec2 cowHeadFine(vec3 p,vec2 res) {
     if(earWins && -cup>ear) res.y=10.0;
     // Poll boss between the horns, and the horns themselves: smooth bent tubes, tapering to a
     // rounded tip, growing out of the boss (smooth union), never a chain of straight segments.
-    float boss=ellipsoid(p-P(187.0,315.0,0.0),vec3(PX(19.0),PX(8.0),0.175));
+    float boss=ellipsoid(p-P(187.0,315.5,0.0),vec3(PX(16.5),PX(8.6),0.165));
     vec3 hq=p; hq.z=abs(hq.z);
     vec3 hb=P(197.0,314.5,0.11);
     mat3 hf=frameOf(vec3(-0.936,-0.10,0.14),vec3(0.0,1.0,-0.05));
-    float horn=arcTaper(transpose(hf)*(hq-hb),0.85,0.68,0.046,0.007);
+    float horn=arcTaper(transpose(hf)*(hq-hb),0.85,0.68,0.040,0.006);
     float hornAll=smoothMin(boss,horn,0.05);
     res=pick(res,vec2(hornAll,7.0));
     res.x=smoothMin(res.x,hornAll,0.02);
@@ -205,10 +205,24 @@ void mainImage(out vec4 O,in vec2 F) {
             if(t>endT)break;
         }
     }
-    // Hatch in the back wall (painting px 590..690 x 135..265): a recessed frame with a planked leaf.
+    // Hatch in the back wall (painting px 590..690 x 135..265): a timber frame round a dark opening, and the
+    // planked leaf hinged on the left and swung open about 15 degrees toward us.
     vec3 sc=P(640.0,200.0,WALL_Z+0.05);
-    addBox(h,ro,rd,sc,vec3(PXZ(54.0,WALL_Z),PXZ(69.0,WALL_Z),0.05),4.0);
-    addBox(h,ro,rd,sc+vec3(0.0,0.0,0.05),vec3(PXZ(46.0,WALL_Z),PXZ(61.0,WALL_Z),0.035),5.0);
+    float fw=PXZ(54.0,WALL_Z),fh=PXZ(69.0,WALL_Z),bt2=PXZ(7.0,WALL_Z),lw=PXZ(46.0,WALL_Z),lh=PXZ(61.0,WALL_Z);
+    addBox(h,ro,rd,sc+vec3(0.0,fh-bt2,0.0),vec3(fw,bt2,0.07),4.0);
+    addBox(h,ro,rd,sc-vec3(0.0,fh-bt2,0.0),vec3(fw,bt2,0.07),4.0);
+    addBox(h,ro,rd,sc-vec3(fw-bt2,0.0,0.0),vec3(bt2,fh,0.07),4.0);
+    addBox(h,ro,rd,sc+vec3(fw-bt2,0.0,0.0),vec3(bt2,fh,0.07),4.0);
+    {
+        const float ca=0.966,sa=0.259;                       // 15 degrees
+        vec3 hinge=sc+vec3(-lw,0.0,0.06);
+        vec3 lo=ro-hinge,ld=rd;
+        lo=vec3(ca*lo.x-sa*lo.z,lo.y,sa*lo.x+ca*lo.z);
+        ld=vec3(ca*ld.x-sa*ld.z,ld.y,sa*ld.x+ca*ld.z);
+        Hit leaf=Hit(h.t,vec3(0),0.0);
+        addBox(leaf,lo,ld,vec3(lw,0.0,0.0),vec3(lw,lh,0.035),5.0);
+        if(leaf.m>0.0) { h=Hit(leaf.t,vec3(ca*leaf.n.x+sa*leaf.n.z,leaf.n.y,-sa*leaf.n.x+ca*leaf.n.z),5.0); }
+    }
     // A bench against the back wall at the right edge (painting px 700..790 x 400..470).
     vec3 bt=P(758.0,405.0,-1.55);
     addBox(h,ro,rd,bt,vec3(PXZ(54.0,-1.55),0.05,0.30),18.0);

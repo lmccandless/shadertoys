@@ -69,7 +69,7 @@ float dashLayer(vec2 fc,float cell,float seed,float ang,float spread,float len,f
         vec2 c=(id+0.15+0.7*r.xy)*cell;
         vec2 d=rot(ang+(r.x-0.5)*spread)*(fc-c);
         float along=1.0-smoothstep(len*0.55,len,abs(d.x));
-        float across=1.0-smoothstep(wid,wid*2.0,abs(d.y+0.15*d.x*d.x/len));
+        float across=1.0-smoothstep(wid,wid*2.0,abs(d.y+(r.y-0.5)*0.5*d.x*d.x/len));
         acc+=(r.y>0.46?1.0:-1.0)*along*across*(0.55+0.45*r.z/density);
     }
     return clamp(acc,-1.0,1.0);
@@ -82,9 +82,10 @@ vec3 bristles(vec3 c,vec2 fc,float material) {
         c=mix(c,c*vec3(0.83,0.83,0.70),0.75*sat(-a));
         c=mix(c,c*vec3(1.08,1.075,1.04)+0.015,0.65*sat(a));
     } else if(material>1.5 && material<2.5) {
-        float a=dashLayer(fc,11.0*k,5.0,0.08,0.9,14.0*k,1.3*k,0.42);
-        c=mix(c,c*vec3(0.78,0.74,0.66),0.55*sat(-a));
-        c=mix(c,c+vec3(0.10,0.075,0.03),0.55*sat(a));
+        float a=dashLayer(fc,13.0*k,5.0,0.10,2.2,17.0*k,1.2*k,0.36);
+        a+=0.8*dashLayer(fc+31.0,9.0*k,61.0,0.55,3.0,9.0*k,1.0*k,0.28);
+        c=mix(c,c*vec3(0.74,0.70,0.62),0.60*sat(-a));
+        c=mix(c,c+vec3(0.11,0.08,0.03),0.60*sat(a));
     }
     return c;
 }

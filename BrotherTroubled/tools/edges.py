@@ -7,9 +7,10 @@ probe line, the reference edge and the render edge in painting pixels (800x668) 
 import sys
 import numpy as np
 from PIL import Image
-SP = '/tmp/claude-0/-home-user-shadertoys/73190e96-f277-5e82-9cca-4ac05c816107/scratchpad'
+import os
+REF = os.environ.get('BT_REFERENCE', 'reference/painting.jpg')  # the 800x668 source painting (not shipped)
 ren = np.asarray(Image.open(sys.argv[1]).convert('RGB').resize((800, 668), Image.LANCZOS)).astype(float) / 255
-ref = np.asarray(Image.open(sys.argv[2] if len(sys.argv) > 2 else SP + '/reference.jpg').convert('RGB')).astype(float) / 255
+ref = np.asarray(Image.open(sys.argv[2] if len(sys.argv) > 2 else REF).convert('RGB')).astype(float) / 255
 lum = lambda a: 0.2126 * a[..., 0] + 0.7152 * a[..., 1] + 0.0722 * a[..., 2]
 Lr, Lm = lum(ref), lum(ren)
 

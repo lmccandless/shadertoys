@@ -1,6 +1,6 @@
 {
-  "project_sha256": "75ebd5bdc422bc36ad814d3ea8757f47f99da20433c95c0843a03b38fa4551d0",
-  "started": "2026-09-29T04:07:37.658Z",
+  "project_sha256": "bcf83962c9345bda5483ea2aa4447bf5f984a20ef7c3e7d58e21118a5fe661ab",
+  "started": "2026-09-29T04:13:42.878Z",
   "results": [
     {
       "test": "portrait",
@@ -63,6 +63,96 @@
       "probes": [],
       "passed": true,
       "wall_seconds": 17.1
+    },
+    {
+      "test": "left",
+      "size": [
+        400,
+        300
+      ],
+      "frames": 24,
+      "errors": "",
+      "finite": {},
+      "probes": [
+        {
+          "frame": 23,
+          "expected": [
+            -0.2617993877991494,
+            -0.2617993877991494,
+            -0.2617993877991494,
+            -0.2617993877991494
+          ],
+          "actual": [
+            -0.2617993950843811,
+            -0.2617993950843811,
+            -0.2617993950843811,
+            -0.2617993950843811
+          ],
+          "passed": true
+        }
+      ],
+      "passed": true,
+      "wall_seconds": 6.2
+    },
+    {
+      "test": "right",
+      "size": [
+        400,
+        300
+      ],
+      "frames": 24,
+      "errors": "",
+      "finite": {},
+      "probes": [
+        {
+          "frame": 23,
+          "expected": [
+            0.2617993877991494,
+            0.2617993877991494,
+            0.2617993877991494,
+            0.2617993877991494
+          ],
+          "actual": [
+            0.2617993950843811,
+            0.2617993950843811,
+            0.2617993950843811,
+            0.2617993950843811
+          ],
+          "passed": true
+        }
+      ],
+      "passed": true,
+      "wall_seconds": 6.3
+    },
+    {
+      "test": "reset",
+      "size": [
+        400,
+        300
+      ],
+      "frames": 48,
+      "errors": "",
+      "finite": {},
+      "probes": [
+        {
+          "frame": 47,
+          "expected": [
+            0,
+            0,
+            0,
+            0
+          ],
+          "actual": [
+            0,
+            0,
+            0,
+            0
+          ],
+          "passed": true
+        }
+      ],
+      "passed": true,
+      "wall_seconds": 11.6
     }
   ]
 }
