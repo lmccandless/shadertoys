@@ -1,0 +1,68 @@
+{
+  "project_sha256": "75ebd5bdc422bc36ad814d3ea8757f47f99da20433c95c0843a03b38fa4551d0",
+  "started": "2026-09-29T04:07:37.658Z",
+  "results": [
+    {
+      "test": "portrait",
+      "size": [
+        800,
+        668
+      ],
+      "frames": 16,
+      "errors": "",
+      "finite": {
+        "Buffer A@0": {
+          "bad": 0,
+          "mn": -10,
+          "mx": 800,
+          "n": 2137600
+        },
+        "Buffer B@0": {
+          "bad": 0,
+          "mn": 0,
+          "mx": 600,
+          "n": 2137600
+        },
+        "Buffer C@0": {
+          "bad": 0,
+          "mn": 0,
+          "mx": 63.25,
+          "n": 2137600
+        },
+        "Buffer D@0": {
+          "bad": 0,
+          "mn": 0,
+          "mx": 64.25,
+          "n": 2137600
+        },
+        "Buffer A@15": {
+          "bad": 0,
+          "mn": -10,
+          "mx": 800,
+          "n": 2137600
+        },
+        "Buffer B@15": {
+          "bad": 0,
+          "mn": 0,
+          "mx": 600,
+          "n": 2137600
+        },
+        "Buffer C@15": {
+          "bad": 0,
+          "mn": 0,
+          "mx": 63.25,
+          "n": 2137600
+        },
+        "Buffer D@15": {
+          "bad": 0,
+          "mn": 0,
+          "mx": 64.25,
+          "n": 2137600
+        }
+      },
+      "probes": [],
+      "passed": true,
+      "wall_seconds": 17.1
+    }
+  ]
+}

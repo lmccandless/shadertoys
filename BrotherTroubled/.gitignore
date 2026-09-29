@@ -1,0 +1,6 @@
+# working captures; the curated shots are committed under shots/ with descriptive names
+shots/dev*.png
+shots/slice*
+shots/_*
+shots/baseline_rebuilt.png
+shots/orbit_*.png
