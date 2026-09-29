@@ -84,8 +84,8 @@ vec3 bristles(vec3 c,vec2 fc,float material) {
     } else if(material>1.5 && material<2.5) {
         float a=dashLayer(fc,13.0*k,5.0,0.10,2.2,17.0*k,1.2*k,0.36);
         a+=0.8*dashLayer(fc+31.0,9.0*k,61.0,0.55,3.0,9.0*k,1.0*k,0.28);
-        c=mix(c,c*vec3(0.74,0.70,0.62),0.60*sat(-a));
-        c=mix(c,c+vec3(0.11,0.08,0.03),0.60*sat(a));
+        c=mix(c,c*vec3(0.80,0.76,0.68),0.38*sat(-a));
+        c=mix(c,c+vec3(0.08,0.06,0.025),0.38*sat(a));
     }
     return c;
 }
@@ -96,6 +96,27 @@ vec3 filmic(vec3 c) {
     float m=max(c.r,max(c.g,c.b)),k=0.80;
     float s=m<k?1.0:(k+(1.0-k)*(1.0-exp(-(m-k)/(1.0-k))))/m;
     return clamp(c*s,0.0,1.0);
+}
+// Fine craquelure: the edges of a jittered cell network, a faint dark hairline in aged varnish.
+float craquelure(vec2 p) {
+    vec2 g=floor(p),f=fract(p);
+    float d1=8.0,d2=8.0;
+    for(int j=-1;j<=1;j++) for(int i=-1;i<=1;i++) {
+        vec2 o=vec2(float(i),float(j)),r=o+hash22(g+o)-f;
+        float d=dot(r,r);
+        if(d<d1){d2=d1;d1=d;} else if(d<d2) d2=d;
+    }
+    return 1.0-smoothstep(0.0,0.06,sqrt(d2)-sqrt(d1));
+}
+// Aged-oil grade: a yellowed varnish veil, umber-lifted blacks, a soft highlight shoulder and a little
+// less chroma, the way a 19th-century canvas photographs under gallery light.
+vec3 varnish(vec3 c) {
+    float l=luminance(c);
+    c=mix(vec3(l),c,0.90);
+    c=c/(1.0+0.12*max(c-0.78,0.0)/0.22);
+    c*=vec3(1.015,0.995,0.935);
+    vec3 d=1.0-c;
+    return c+vec3(0.060,0.047,0.028)*d*d*d;
 }
 void mainImage(out vec4 O,in vec2 F) {
     if(!isReady(iChannel0,64.25)) { O=vec4(0.075,0.059,0.031,1);return; }
@@ -117,13 +138,18 @@ void mainImage(out vec4 O,in vec2 F) {
     vec2 strokeUV=rot(0.32)*uv*vec2(4.2,1.25)+vec2(tooth.r*0.08,tooth.g*0.09);
     float stroke=pigment(iChannel2,strokeUV).g;
     float bristles=tooth.b-0.5;
-    c*=1.0+PAINT_AMOUNT*0.055*(stroke-0.5);
-    c*=1.0+PAINT_AMOUNT*(bristles*0.076+weave*0.005);
+    c*=1.0+PAINT_AMOUNT*0.075*(stroke-0.5);
+    c*=1.0+PAINT_AMOUNT*(bristles*0.11+weave*0.008);
+    // Impasto grain: dry-brushed pigment catches on the canvas tooth, strongest in the light passages.
+    float grain=0.6*(hash12(F)-0.5)+0.4*(hash12(floor(F*0.5)+7.0)-0.5);
+    c*=1.0+0.16*grain*(0.4+0.6*luminance(c));
+    c*=1.0-0.055*craquelure(F/(9.0*max(iResolution.y/668.0,0.6)))*smoothstep(0.15,0.6,luminance(c));
+    c=varnish(c);
     c+=(hash12(F)-0.5)*0.0030;
+    // Vignette: darker toward the barn's right-hand depths and the lower corners, as in the painting.
     vec2 v=(F-0.5*iResolution.xy)/iResolution.xy;
-    float vignette=1.0-0.28*dot(v*vec2(0.9,1.0),v*vec2(0.9,1.0));
+    float vignette=1.0-0.30*dot(v*vec2(0.9,1.0),v*vec2(0.9,1.0));
+    vignette*=1.0-0.14*smoothstep(0.05,0.5,v.x)*smoothstep(-0.2,0.5,v.y);
     c*=vignette;
-    // Lift the very deepest umbers by a fraction, like light scattered in varnish.
-    c=mix(c,vec3(0.115,0.092,0.055),0.030*(1.0-luminance(c)));
     O=vec4(sat(c),1);
 }

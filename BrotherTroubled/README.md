@@ -21,9 +21,9 @@ Before (hand-off) / after: `baseline/portrait.png` vs `shots/final.png`. Orbit e
 
 **Landscape and sky**: calibrated camera (horizon, hoof and ground perspective match the painting); crown-row tree lines, church tower, elm with trunk, meadow strip, teal sky with a warm cumulus and three birds. The sky follows only a quarter of the orbit, like a backdrop.
 
-**Colour and finish**: palettes are written in sRGB as read off the painting; tone curve is near-identity with a soft knee; hide gets canvas-anchored bristle strokes, ground gets straw dabs, stronger vignette.
+**Colour and finish**: palettes are written in sRGB as read off the painting; tone curve is near-identity with a soft knee; hide gets canvas-anchored bristle strokes, ground gets straw dabs, an aged-varnish grade (lifted umber blacks, soft highlight shoulder, slight desaturation, warm veil), impasto grain, faint craquelure, and an asymmetric vignette darkening the barn depths.
 
-Palette check against the painting (`tools/regions.py`, 33 regions): mean abs RGB error 0.086 (hand-off) -> 0.036.
+Palette check against the painting (`tools/regions.py`, 33 regions): mean abs RGB error 0.086 (hand-off) -> 0.030.
 
 ## Files
 
