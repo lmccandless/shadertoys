@@ -17,10 +17,11 @@ vec2 labelGoal(int id,vec2 anchor,float radius,vec2 halfBox,float oldAngle,bool 
  if(initial)return vec2(preferred,0);
  vec4 old=texelFetch(iChannel1,ivec2(META+id,4),0);
  float best=1e20;vec2 goal=vec2(preferred,0);
+ int frame=int(mod(float(iFrame),48.0)); // Same site/extra cycle as iFrame, without overflow.
  for(int trial=0;trial<labelTrials;trial++){
- int site=(iFrame*2+trial-2)%16;
+ int site=(frame*2+trial-2)%16;
  float angle=trial==0&&old.w>0.5?old.x:(trial<2?preferred:preferred+float(site)*PI/8.0);
- float extra=trial==0&&old.w>0.5?old.y:(trial<2?0.0:float((iFrame/8)%3)*28.0);
+ float extra=trial==0&&old.w>0.5?old.y:(trial<2?0.0:float((frame/8)%3)*28.0);
  vec2 dir=vec2(cos(angle),sin(angle));
  vec2 q=anchor+dir*(labelReach(radius,dir,halfBox)+extra);
  float change=atan(sin(angle-oldAngle),cos(angle-oldAngle));
@@ -40,41 +41,7 @@ vec2 labelGoal(int id,vec2 anchor,float radius,vec2 halfBox,float oldAngle,bool 
  }
  return goal;
 }
-// Compact text cache lives entirely inside the existing bloom-excluded metadata region.
-int digits(int n){return n>=10000?5:(n>=1000?4:(n>=100?3:(n>=10?2:1)));}
-uint decimalDigits(int n){uint w=uint(48+n/1000%10)|(uint(48+n/100%10)<<8u)|(uint(48+n/10%10)<<16u)|(uint(48+n%10)<<24u);return w>>uint((4-min(digits(n),4))*8);}
-void byteAt(inout uvec4 w,int slot,uint b){if(slot<4)w.x|=b<<uint(slot*8);else if(slot<8)w.y|=b<<uint((slot-4)*8);else if(slot<12)w.z|=b<<uint((slot-8)*8);else w.w|=b<<uint((slot-12)*8);}
-void appendNumber(inout uvec4 w,int start,int n){
- if(n>=10000){byteAt(w,start,uint(48+n/10000%10));start++;}
- uint encoded=decimalDigits(n),shift=uint((start%4)*8),first=encoded<<shift,second=shift>0u?encoded>>(32u-shift):0u;
- if(start<4){w.x|=first;w.y|=second;}else if(start<8){w.y|=first;w.z|=second;}else{w.z|=first;w.w|=second;}
-}
-void appendUnit(inout uvec4 w,int start,int unit){byteAt(w,start,32u);if(unit==0)byteAt(w,start+1,75u);else{byteAt(w,start+1,176u);byteAt(w,start+2,unit==1?67u:70u);}}
-uvec4 symbol(int m){if(m==0)return uvec4(26433u,0,0,0);if(m==1)return uvec4(30017u,0,0,0);if(m==2)return uvec4(30019u,0,0,0);if(m==3)return uvec4(25926u,0,0,0);if(m==4)return uvec4(7497027u,0,0,0);return uvec4(16962u,0,0,0);}
-void makeText(int textID,out uvec4 words,out int count){
- vec4 cam=texelFetch(iChannel2,ivec2(META,0),0),settings=texelFetch(iChannel2,ivec2((META+3),0),0),options=texelFetch(iChannel2,ivec2((META+4),0),0);
- vec4 zoom=texelFetch(iChannel2,ivec2((META+8),0),0),prefs=texelFetch(iChannel2,ivec2((META+15),0),0);
- int mode=int(texelFetch(iChannel2,ivec2((META+5),0),0).x+0.5),unit=clamp(int(prefs.z+0.5),0,2);
- words=uvec4(0);count=0;
- if(textID<6){
- int temp=int(displayTemperature(clamp((mode==1?1800.0:TEMPERATURE_K+float(textID)*TEMPERATURE_STEP_K)+cam.z,500.0,6500.0),unit)+0.5),d=digits(temp);
- int start=0;
- if(mode!=0){words=symbol(textID);start=textID==4?4:3;byteAt(words,start-1,32u);}
- appendNumber(words,start,temp);appendUnit(words,start+d,unit);count=start+d+(unit==0?2:3);
- }else if(textID==6){
- words=uvec4(1953066309u,32u,0u,0u);float v=exp2(6.0*(options.z-0.5));int n=int(v*100.0+0.5);byteAt(words,5,uint(48+n/100));byteAt(words,6,46u);byteAt(words,7,uint(48+n/10%10));byteAt(words,8,uint(48+n%10));byteAt(words,9,120u);count=10;
- }else if(textID==7){
- words=uvec4(1818458435u,8293u,0u,0u);int n=int(2.0*PI/max(options.w,0.01)+0.5),d=digits(n);appendNumber(words,6,n);byteAt(words,6+d,115u);count=7+d;
- }else{
- int id=textID-8;
- words=uvec4(0);
- if(id==0){float delta=cam.z*(unit==2?1.8:1.0);int n=int(abs(delta)+0.5),d=digits(n);words.x=delta<0.0?45u:43u;appendNumber(words,1,n);appendUnit(words,1+d,unit);count=d+1+(unit==0?2:3);}
- else if(id==1){int n=int(settings.y*100.0+0.501),d=digits(n);appendNumber(words,0,n);byteAt(words,d,37u);count=d+1;}
- else if(id==5){int n=int(2.0*PI/max(options.w,0.01)+0.5),d=digits(n);appendNumber(words,0,n);byteAt(words,d,32u);byteAt(words,d+1,115u);count=d+2;}
- else{float v=id==4?exp2(6.0*(options.z-0.5)):(id==6?16.0/zoom.x:(id==2?settings.z:settings.w));int n=int(v*100.0+0.5),whole=n/100,fraction=n%100;words.x=uint(48+whole)|(46u<<8u)|(uint(48+fraction/10)<<16u)|(uint(48+fraction%10)<<24u);words.y=120u;count=5;}
-
- }
-}
+// Slider descriptors live in the bloom-excluded metadata region; Image builds all text itself.
 vec4 makeSlider(int slot){
  vec4 cam=texelFetch(iChannel2,ivec2(META,0),0),settings=texelFetch(iChannel2,ivec2((META+3),0),0),options=texelFetch(iChannel2,ivec2((META+4),0),0);
  vec4 ui=texelFetch(iChannel2,ivec2((META+5),0),0),zoom=texelFetch(iChannel2,ivec2((META+8),0),0);
@@ -97,10 +64,7 @@ void mainImage(out vec4 O,in vec2 P){
  bool textPixel=(p.y==1&&p.x>=META&&p.x<=(META+17))||(p.y>=2&&p.y<=4&&p.x>=(META+6)&&p.x<=(META+17));
  if(textPixel){
  int slot=p.y==1?p.x-META:18+(p.y-2)*12+p.x-(META+6);
- if(slot>=45){O=slot<51?makeSlider(slot-45):vec4(0);return;}
- uvec4 words;int count;makeText(slot/3,words,count);
- int part=slot%3;
- O=part==0?vec4(words&uvec4(65535u)):(part==1?vec4(words>>16u):vec4(float(count),0,0,0));return;
+ O=slot>=45&&slot<51?makeSlider(slot-45):vec4(0);return;
  }
  hudHeight=texelFetch(iChannel2,ivec2((META+15),0),0).y>0.5?0.0:UI_HEIGHT;
  if(p.x>=META&&p.x<(META+6)&&p.y>=2&&p.y<=4){

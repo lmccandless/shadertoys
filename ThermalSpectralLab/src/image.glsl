@@ -1,6 +1,24 @@
 // SDF atlas technique: shadertoy.com/view/ldfcDr (CC0).
 // One selected text run per fragment, one shared glyph path; no duplicated font trees.
-struct TextRun{vec2 origin;float size;uvec4 words;int count;vec3 ink;};
+// Text holds one character code per ivec4 component (12 max). Nothing is packed into
+// 32-bit integers or carried through a buffer, so it reads the same on GPUs with 16-bit or
+// float-emulated integers and on devices whose buffers are half-float.
+struct TextRun{vec2 origin;float size;ivec4 c0,c1,c2;int count;vec3 ink;};
+void setText(inout TextRun r,ivec4 a,ivec4 b,ivec4 c,int n){r.c0=a;r.c1=b;r.c2=c;r.count=n;}
+void setText(inout TextRun r,ivec4 a,ivec4 b,int n){setText(r,a,b,ivec4(0),n);}
+void setText(inout TextRun r,ivec4 a,int n){setText(r,a,ivec4(0),ivec4(0),n);}
+// Branch-free: each slot is written once, so adding into the zeroed lanes is exact.
+void putChar(inout TextRun r,int i,int ch){
+ r.c0+=ivec4(equal(ivec4(i),ivec4(0,1,2,3)))*ch;
+ r.c1+=ivec4(equal(ivec4(i),ivec4(4,5,6,7)))*ch;
+ r.c2+=ivec4(equal(ivec4(i),ivec4(8,9,10,11)))*ch;
+}
+int digitCount(int n){return n>=10000?5:(n>=1000?4:(n>=100?3:(n>=10?2:1)));}
+void putNumber(inout TextRun r,int start,int n){
+ int d=digitCount(n),div=d==5?10000:(d==4?1000:(d==3?100:(d==2?10:1)));
+ for(int k=0;k<5;k++){putChar(r,start+k,k<d?48+n/div%10:0);div=max(div/10,1);}
+}
+void putUnit(inout TextRun r,int start,int unit){putChar(r,start,32);if(unit==0)putChar(r,start+1,75);else{putChar(r,start+1,176);putChar(r,start+2,unit==1?67:70);}}
 float glyph(vec2 q,int ch,float size){
  if(ch==176){float r=length(q-vec2(0.12,0.43)*size);return 1.0-smoothstep(0.035*size,0.035*size+0.65*495.0/iResolution.y,abs(r-0.085*size));}
  vec2 uv=q/size+vec2(0.30,0.20);
@@ -12,17 +30,46 @@ float glyph(vec2 q,int ch,float size){
 float coverage(vec2 p,TextRun run){
  int slot=int(floor((p.x-run.origin.x)/(run.size*0.5)));
  if(slot<0||slot>=run.count)return 0.0;
- uint word=slot<4?run.words.x:(slot<8?run.words.y:(slot<12?run.words.z:run.words.w));
- return glyph(p-run.origin-vec2(float(slot)*run.size*0.5,0),int((word>>uint((slot%4)*8))&255u),run.size);
+ ivec4 w=slot<4?run.c0:(slot<8?run.c1:run.c2);int k=slot%4;
+ return glyph(p-run.origin-vec2(float(slot)*run.size*0.5,0),k==0?w.x:(k==1?w.y:(k==2?w.z:w.w)),run.size);
 }
 float stroke(vec2 p,vec2 a,vec2 b,float width){vec2 v=b-a;float t=clamp(dot(p-a,v)/max(dot(v,v),0.001),0.0,1.0);return 1.0-smoothstep(width,width+0.65,length(p-a-t*v));}
-uvec4 symbol(int m){if(m==0)return uvec4(26433u,0,0,0);if(m==1)return uvec4(30017u,0,0,0);if(m==2)return uvec4(30019u,0,0,0);if(m==3)return uvec4(25926u,0,0,0);if(m==4)return uvec4(7497027u,0,0,0);return uvec4(16962u,0,0,0);}
-// Three exact-float metadata texels per text run; split uint32 words avoid NaN bitcasts.
+void setSymbol(inout TextRun r,int m){
+ if(m==0)setText(r,ivec4(65,103,0,0),2);else if(m==1)setText(r,ivec4(65,117,0,0),2);else if(m==2)setText(r,ivec4(67,117,0,0),2);
+ else if(m==3)setText(r,ivec4(70,101,0,0),2);else if(m==4)setText(r,ivec4(67,101,114,0),3);else{setText(r,ivec4(66,66,0,0),2);}
+}
+// Slider descriptors are still cached by C (plain floats, exact in half precision).
 ivec2 textCell(int slot){return slot<18?ivec2(META+slot,1):ivec2((META+6)+(slot-18)%12,2+(slot-18)/12);}
-void readText(int id,out uvec4 words,out int count){
- int slot=id*3;
- words=uvec4(texelFetch(iChannel2,textCell(slot),0))|(uvec4(texelFetch(iChannel2,textCell(slot+1),0))<<16u);
- count=int(texelFetch(iChannel2,textCell(slot+2),0).x);
+float labelTemperature(int id,int mode,float offset){return clamp((mode==1?1800.0:TEMPERATURE_K+float(id)*TEMPERATURE_STEP_K)+offset,500.0,6500.0);}
+int labelLength(int id){
+ int mode=int(texelFetch(iChannel2,ivec2(META+5,0),0).x+0.5),unit=clamp(int(texelFetch(iChannel2,ivec2(META+15,0),0).z+0.5),0,2);
+ int temp=int(displayTemperature(labelTemperature(id,mode,texelFetch(iChannel2,ivec2(META,0),0).z),unit)+0.5);
+ return (mode!=0?(id==4?4:3):0)+digitCount(temp)+(unit==0?2:3);
+}
+// Live text: 0-5 sphere labels, 6-7 advanced readouts, 8-14 slider readouts.
+// State comes from C's row-0 copy of A.
+void makeText(inout TextRun r,int textID){
+ vec4 cam=texelFetch(iChannel2,ivec2(META,0),0),settings=texelFetch(iChannel2,ivec2(META+3,0),0),options=texelFetch(iChannel2,ivec2(META+4,0),0);
+ vec4 zoom=texelFetch(iChannel2,ivec2(META+8,0),0),prefs=texelFetch(iChannel2,ivec2(META+15,0),0);
+ int mode=int(texelFetch(iChannel2,ivec2(META+5,0),0).x+0.5),unit=clamp(int(prefs.z+0.5),0,2);
+ setText(r,ivec4(0),0);
+ if(textID<6){
+ int temp=int(displayTemperature(labelTemperature(textID,mode,cam.z),unit)+0.5),d=digitCount(temp),start=0;
+ if(mode!=0){setSymbol(r,textID);start=textID==4?4:3;putChar(r,start-1,32);}
+ putNumber(r,start,temp);putUnit(r,start+d,unit);r.count=start+d+(unit==0?2:3);
+ }else if(textID==6){
+ setText(r,ivec4(69,109,105,116),ivec4(32,0,0,0),5);int n=int(exp2(6.0*(options.z-0.5))*100.0+0.5);
+ putChar(r,5,48+n/100%10);putChar(r,6,46);putChar(r,7,48+n/10%10);putChar(r,8,48+n%10);putChar(r,9,120);r.count=10;
+ }else if(textID==7){
+ setText(r,ivec4(67,121,99,108),ivec4(101,32,0,0),6);int n=int(2.0*PI/max(options.w,0.01)+0.5),d=digitCount(n);putNumber(r,6,n);putChar(r,6+d,115);r.count=7+d;
+ }else{
+ int id=textID-8;
+ if(id==0){float delta=cam.z*(unit==2?1.8:1.0);int n=int(abs(delta)+0.5),d=digitCount(n);putChar(r,0,delta<0.0?45:43);putNumber(r,1,n);putUnit(r,1+d,unit);r.count=d+1+(unit==0?2:3);}
+ else if(id==1){int n=int(settings.y*100.0+0.501),d=digitCount(n);putNumber(r,0,n);putChar(r,d,37);r.count=d+1;}
+ else if(id==5){int n=int(2.0*PI/max(options.w,0.01)+0.5),d=digitCount(n);putNumber(r,0,n);putChar(r,d,32);putChar(r,d+1,115);r.count=d+2;}
+ else{float v=id==4?exp2(6.0*(options.z-0.5)):(id==6?16.0/zoom.x:(id==2?settings.z:settings.w));int n=int(v*100.0+0.5),fraction=n%100;
+ putChar(r,0,48+n/100);putChar(r,1,46);putChar(r,2,48+fraction/10);putChar(r,3,48+fraction%10);putChar(r,4,120);r.count=5;}
+ }
 }
 void mainImage(out vec4 O,in vec2 P){
  vec2 uv=P/iResolution.xy,p=P*vec2(880,495)/iResolution.xy,mouse=iMouse.xy*vec2(880,495)/iResolution.xy;
@@ -32,12 +79,14 @@ void mainImage(out vec4 O,in vec2 P){
  vec4 scene=texelFetch(iChannel2,ivec2((META+9),0),0);int labelCount=clamp(int(scene.x+0.5),1,6),sliderCount=ui.y>0.5?6:2;
  int unit=clamp(int(prefs.z+0.5),0,2);
  int mode=int(ui.x+0.5),material=int(options.x+0.5);
- TextRun run;run.origin=vec2(0);run.size=14.0;run.words=uvec4(0);run.count=0;run.ink=vec3(0.90);
+ TextRun run;run.origin=vec2(0);run.size=14.0;setText(run,ivec4(0),0);run.ink=vec3(0.90);
+ // Live text is chosen below and built once, after selection: one makeText call site.
+ int liveText=-1,align=0;float alignX=0.0;
  // No frame-zero assumption: every pass proves that its actual inputs are ready.
  bool ready=passReady(texelFetch(iChannel0,ivec2((META+10),0),0),211.0)&&passReady(texelFetch(iChannel2,ivec2((META+11),0),0),311.0)&&passReady(texelFetch(iChannel1,ivec2((META+10),0),0),419.0);
  vec3 c=vec3(0.018);
  if(!ready){
-run.origin=vec2(413,250);run.words=uvec4(1684107084u,6778473u,0u,0u);run.count=7;run.size=14.0;
+run.origin=vec2(413,250);setText(run,ivec4(76,111,97,100),ivec4(105,110,103,0),7);run.size=14.0;
  for(int k=0;k<3;k++){
  bool ok=k==0?passReady(texelFetch(iChannel0,ivec2((META+10),0),0),211.0):(k==1?passReady(texelFetch(iChannel2,ivec2((META+11),0),0),311.0):passReady(texelFetch(iChannel1,ivec2((META+10),0),0),419.0));
  c=mix(c,vec3(ok?0.7:0.15),stroke(p,vec2(410.0+float(k)*22.0,237),vec2(425.0+float(k)*22.0,237),0.4));
@@ -91,7 +140,7 @@ run.origin=vec2(413,250);run.words=uvec4(1684107084u,6778473u,0u,0u);run.count=7
  leaderMask*=smoothstep(a.z+1.0,a.z+3.0,length(p-a.xy));
  vec2 dir=vec2(cos(s.x),sin(s.x));
  vec2 label=a.xy+dir*(labelReach(a.z,dir,vec2(s.z,9))+s.y);
- float textWidth=3.75*texelFetch(iChannel2,textCell(k*3+2),0).x;
+ float textWidth=3.75*float(labelLength(k));
  vec2 outside=max(abs(p-label-vec2(0,2.5))-vec2(max(s.z,textWidth)+4.0,10.5),vec2(0));
  leaderMask*=smoothstep(0.0,1.5,length(outside));
  }
@@ -109,7 +158,7 @@ run.origin=vec2(413,250);run.words=uvec4(1684107084u,6778473u,0u,0u);run.count=7
  c=mix(c,vec3(0.78),max(line,stroke(p,ua,ub,0.12))*0.58*leaderMask);
  c=mix(c,vec3(0.88),0.6*(1.0-smoothstep(0.55,1.4,length(p-begin)))*leaderMask);
  if(abs(p.x-label.x)<width+5.0&&p.y>=label.y-5.0&&p.y<label.y+12.0){
- readText(j,run.words,run.count);run.size=15.0;run.origin=label+vec2(-float(run.count)*3.75,-3.5);
+ liveText=j;run.size=15.0;run.origin=label+vec2(0,-3.5);align=1;alignX=label.x;
  }
  }
  }
@@ -150,45 +199,48 @@ run.origin=vec2(413,250);run.words=uvec4(1684107084u,6778473u,0u,0u);run.count=7
  run.size=13.5;
  if(p.y>=38.0){
  run.origin.y=50.0;
- if(p.x<76.0){run.origin.x=20.0;run.words=uvec4(1735289171u,25964u,0u,0u);run.count=6;run.ink=mode==0||hover==10?ink:muted;}
- else if(p.x<122.0){run.origin.x=80.0;run.words=uvec4(2003134806u,0u,0u,0u);run.count=4;run.ink=mode==1||hover==11?ink:muted;}
- else if(p.x<174.0){run.origin.x=128.0;run.words=uvec4(1886216530u,0u,0u,0u);run.count=4;run.ink=mode==2||hover==12?ink:muted;}
+ if(p.x<76.0){run.origin.x=20.0;setText(run,ivec4(83,105,110,103),ivec4(108,101,0,0),6);run.ink=mode==0||hover==10?ink:muted;}
+ else if(p.x<122.0){run.origin.x=80.0;setText(run,ivec4(86,105,101,119),4);run.ink=mode==1||hover==11?ink:muted;}
+ else if(p.x<174.0){run.origin.x=128.0;setText(run,ivec4(82,97,109,112),4);run.ink=mode==2||hover==12?ink:muted;}
  else if(p.x<384.0){
  if(ui.y>0.5){
- if(p.x<284.0){run.origin.x=194.0;readText(6,run.words,run.count);}
- else{run.origin.x=294.0;readText(7,run.words,run.count);}
- }else{int m=clamp(int((p.x-188.0)/30.0),0,5);run.origin.x=194.0+float(m)*30.0;run.words=symbol(m);run.count=m==4?3:2;run.ink=mode==0&&m==material?ink:muted;}
+ if(p.x<284.0){run.origin.x=194.0;liveText=6;}
+ else{run.origin.x=294.0;liveText=7;}
+ }else{int m=clamp(int((p.x-188.0)/30.0),0,5);run.origin.x=194.0+float(m)*30.0;setSymbol(run,m);run.ink=mode==0&&m==material?ink:muted;}
  }
- else if(p.x<492.0){int u=clamp(int((p.x-394.0)/28.0),0,2);run.origin.x=404.0+float(u)*28.0;run.words=u==0?uvec4(75u,0u,0u,0u):uvec4(176u|((u==1?67u:70u)<<8u),0u,0u,0u);run.count=u==0?1:2;run.ink=u==unit?ink:muted;}
- else if(p.x<592.0){run.origin.x=516.0;run.words=uvec4(1700946252u,29548u,0u,0u);run.count=6;run.ink=prefs.x>0.5||hover==14?ink:muted;}
- else if(p.x<681.0){run.origin.x=634.0;if(options.y>0.5){run.words=uvec4(1937072464u,101u,0u,0u);run.count=5;}else{run.words=uvec4(2036427856u,0u,0u,0u);run.count=4;}}
- else if(p.x>=764.0&&p.x<837.0){run.origin.x=774.0;if(ui.y>0.5){run.words=uvec4(1801675074u,0u,0u,0u);run.count=4;}else{run.words=uvec4(1701998413u,0u,0u,0u);run.count=4;}}
+ else if(p.x<492.0){int u=clamp(int((p.x-394.0)/28.0),0,2);run.origin.x=404.0+float(u)*28.0;if(u==0)setText(run,ivec4(75,0,0,0),1);else setText(run,ivec4(176,u==1?67:70,0,0),2);run.ink=u==unit?ink:muted;}
+ else if(p.x<592.0){run.origin.x=516.0;setText(run,ivec4(76,97,98,101),ivec4(108,115,0,0),6);run.ink=prefs.x>0.5||hover==14?ink:muted;}
+ else if(p.x<681.0){run.origin.x=634.0;if(options.y>0.5){setText(run,ivec4(80,97,117,115),ivec4(101,0,0,0),5);}else{setText(run,ivec4(80,108,97,121),4);}}
+ else if(p.x>=764.0&&p.x<837.0){run.origin.x=774.0;if(ui.y>0.5){setText(run,ivec4(66,97,99,107),4);}else{setText(run,ivec4(77,111,114,101),4);}}
  }else if(p.y>=21.0){
  int col=p.x<295.0?0:(p.x<485.0?1:(p.x<665.0?2:3)),id=col==3?6:(ui.y>0.5?col+1:(col==0?0:(col==1?17:18)));vec2 range=col==0?vec2(20,280):(col==1?vec2(310,470):(col==2?vec2(500,650):vec2(680,845)));run.origin=vec2(range.x,29.0);
  float readout=range.y-(col==0?91.0:49.0);
  if(p.x<readout||id==17||id==18){
  run.ink=muted;
- if(id==17){run.words=uvec4(1869573190u,114u,0u,0u);run.count=5;run.ink=muted;}
- else if(id==18){run.words=uvec4(1751607628u,1735289204u,0u,0u);run.count=8;run.ink=muted;}
- else if(id==0){run.words=uvec4(1952539976u,1717989152u,7628147u,0u);run.count=11;}
- else if(id==1){run.words=uvec4(1735749458u,1936027240u,115u,0u);run.count=9;}
- else if(id==2){bool norm=texelFetch(iChannel2,ivec2((META+2),0),0).y>0.0;run.words=norm?uvec4(544241733u,1969302868u,28532u,0u):uvec4(544241733u,1869491540u,623930738u,0u);run.count=norm?10:12;run.ink=hover==20?ink:muted;}
- else if(id==3){run.words=uvec4(1769369157u,1835954034u,7630437u,0u);run.count=11;}
- else if(id==4){run.words=uvec4(1936289093u,1852795251u,0u,0u);run.count=8;}
- else if(id==5){run.words=uvec4(1818458435u,1886593125u,6579557u,0u);run.count=11;}
- else{run.words=uvec4(1836019546u,0u,0u,0u);run.count=4;}
+ if(id==17){setText(run,ivec4(70,108,111,111),ivec4(114,0,0,0),5);run.ink=muted;}
+ else if(id==18){setText(run,ivec4(76,105,103,104),ivec4(116,105,110,103),8);run.ink=muted;}
+ else if(id==0){setText(run,ivec4(72,101,97,116),ivec4(32,111,102,102),ivec4(115,101,116,0),11);}
+ else if(id==1){setText(run,ivec4(82,111,117,103),ivec4(104,110,101,115),ivec4(115,0,0,0),9);}
+ else if(id==2){bool norm=texelFetch(iChannel2,ivec2((META+2),0),0).y>0.0;if(norm)setText(run,ivec4(69,120,112,32),ivec4(84,45,97,117),ivec4(116,111,0,0),10);else setText(run,ivec4(69,120,112,32),ivec4(84,45,110,111),ivec4(114,109,48,37),12);run.ink=hover==20?ink:muted;}
+ else if(id==3){setText(run,ivec4(69,110,118,105),ivec4(114,111,110,109),ivec4(101,110,116,0),11);}
+ else if(id==4){setText(run,ivec4(69,109,105,115),ivec4(115,105,111,110),8);}
+ else if(id==5){setText(run,ivec4(67,121,99,108),ivec4(101,32,115,112),ivec4(101,101,100,0),11);}
+ else{setText(run,ivec4(90,111,111,109),4);}
  }else{
- readText(8+id,run.words,run.count);
- run.origin.x=range.y-float(run.count)*run.size*0.5;
+ liveText=8+id;align=2;alignX=range.y;
  }
  }else if(ui.y<0.5&&p.y>=4.0){
  run.size=13.5;run.origin.y=8.0;
- if(p.x>=295.0&&p.x<485.0){int f=clamp(int((p.x-310.0)/56.0),0,2);run.origin.x=310.0+56.0*float(f);run.words=f==0?uvec4(1936682055u,115u,0u,0u):(f==1?uvec4(1769234771u,110u,0u,0u):uvec4(1953784141u,101u,0u,0u));run.count=5;run.ink=f==floorChoice?ink:muted;}
- else if(p.x>=485.0&&p.x<665.0){int light=p.x<536.0?0:(p.x<600.0?1:2);run.origin.x=light==0?500.0:(light==1?547.0:610.0);run.words=light==0?uvec4(1700951363u,0u,0u,0u):(light==1?uvec4(1685419091u,28521u,0u,0u):uvec4(1952870227u,0u,0u,0u));run.count=light==1?6:4;run.ink=light==int(renderSettings.y+0.5)?ink:muted;}
+ if(p.x>=295.0&&p.x<485.0){int f=clamp(int((p.x-310.0)/56.0),0,2);run.origin.x=310.0+56.0*float(f);if(f==0)setText(run,ivec4(71,108,111,115),ivec4(115,0,0,0),5);else if(f==1)setText(run,ivec4(83,97,116,105),ivec4(110,0,0,0),5);else setText(run,ivec4(77,97,116,116),ivec4(101,0,0,0),5);run.ink=f==floorChoice?ink:muted;}
+ else if(p.x>=485.0&&p.x<665.0){int light=p.x<536.0?0:(p.x<600.0?1:2);run.origin.x=light==0?500.0:(light==1?547.0:610.0);if(light==0)setText(run,ivec4(67,117,98,101),4);else if(light==1)setText(run,ivec4(83,116,117,100),ivec4(105,111,0,0),6);else setText(run,ivec4(83,111,102,116),4);run.ink=light==int(renderSettings.y+0.5)?ink:muted;}
  }
  }
  }
  } // Loading and the live UI use the same glyph path.
+ if(liveText>=0){
+ makeText(run,liveText);
+ if(align>0)run.origin.x=alignX-float(run.count)*run.size*(align==1?0.25:0.5);
+ }
  // The entire display shares these two atlas samples, including the soft shadow.
  // One data-bounded glyph tree supplies the unchanged shadow and foreground samples.
  int glyphLayers=ready?clamp(int(ui.w+0.5),1,2):2;

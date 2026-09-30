@@ -57,6 +57,15 @@ wavelengths per `vec4`), which is easier on mobile shader compilers.
 **Image:** a cheap bounding-box test skips the label leader and mask loops for pixels far
 from every label. The output is pixel-identical.
 
+**Text that survives low-precision GPUs.** The original packed four characters into each
+32-bit `uint` literal. It also sent label and readout text from Buffer C to Image as 16-bit
+halves stored in float buffers. On GPUs with 16-bit or float-emulated integers, or with
+half-float buffers, anything over 2–3 characters came out scrambled. Short strings like
+`Au`, `Fe`, `K` and `°C` still worked. Text is now one character code per `ivec4` component
+(max 12). Image builds the live labels and readouts itself from the state row, so nothing
+textual goes through a buffer. The `iFrame` arithmetic in the label placer is also kept
+small. The rendered result is pixel-identical on a full-precision GPU.
+
 **Smaller fixes:**
 - Passes that own nothing at a pixel exit early.
 - A local `digits` variable no longer shadows the `digits()` function in C.
