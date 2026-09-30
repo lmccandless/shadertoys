@@ -1,0 +1,12 @@
+LITE / MOBILE BUILD. Defaults to a light transport mode (1 ray per pixel, 2 reflection bounces, cheap soft shadows, lighter bloom) at an adaptive render resolution that lowers itself below ~25 fps and raises itself above ~45 fps. Works on any canvas of at least 211x68 px. For the original full-quality transport set QUALITY 1 in Common; set RENDER_SCALE 1.0 for fixed full resolution.
+
+Spectral thermal emission (48 wavelengths, 10nm) with conductor Fresnel, emissive sphere lighting, soft shadows/AO, GGX reflections and HDR bloom. Deterministic hybrid transport; rough-lobe filtering and emitter visibility are approximations. Optical constants use room-temperature data; phase changes are not modeled. Accuracy model: smooth directional Fresnel/Kirchhoff emission (no roughness boost); Cer is an n=1.5 gray dielectric surrogate with diffuse base 0.32. Spectral emission covers 360–830nm and 500–6500K. Reflection is a D65-weighted RGB approximation (D65 data 360–780nm), not full spectral transport under arbitrary lights. SDR output uses luminance compression and highlight gamut fitting after linear light composition; displayed luminance is not physically calibrated.
+
+
+Original shader code © 2026 Logan McCandless. CC BY-NC-ND 4.0; see Common.
+
+Default demo: clean Soft studio, View mode, a six-second 1000–2500–1000 K temperature sweep, and a gentle 48-second clockwise camera orbit. Manual camera input suspends orbit; P/play pauses both.
+
+Reference camera: 1.70x zoom, approximately 0.50 rad pitch and 2.625 rad yaw. A gentle tour changes one feature about every 24 seconds: Studio, Satin, Ramp, Matte, Cube, View, Soft, then Gloss. Manual input postpones the next change for at least 24 idle autoplay seconds; Pause freezes the tour.
+
+Sphere-only scene. T-auto is an adaptive presentation mode: a single reference is derived from the hottest/brightest of the six cached emitter means, so all materials share one exposure multiplier. External environment and lamp illumination compensate for this exposure, capped at64x, to keep reflections readable. Emission itself is never artificially shaded or normalized per object. T-auto off preserves fixed illumination and raw/manual exposure. Manual exposure and emission controls remain effective. This is not a fixed-light, physically calibrated camera simulation. Soft uses one broad feathered key and a faint fill; Cube and honeycomb Studio remain available.
