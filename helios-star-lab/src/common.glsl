@@ -7,6 +7,9 @@ https://creativecommons.org/licenses/by-nc-nd/4.0/ */
 // (as a fraction of breakup) and magnetic-cycle phase. Nothing is a per-star special case.
 
 const float PI = 3.14159265, TAU = 6.28318531;
+// Loop bounds plus ZERO cannot be folded, so ANGLE's HLSL backend does not unroll them.
+// Unrolled nested loops are what make shader compiles explode.
+#define ZERO min(iFrame, 0)
 const float VERSION = 601.0;
 
 // ---- Buffer A, row 0 -------------------------------------------------------------
@@ -54,7 +57,7 @@ float vnoise(vec3 p) {
 // fBm that fades each octave to its mean once it is smaller than the pixel footprint fp.
 float fbm(vec3 p, float fp, int octaves) {
     float s = 0.0, a = 0.5;
-    for (int i = 0; i < octaves; i++) {
+    for (int i = 0; i < octaves + ZERO; i++) {
         s += a * mix(vnoise(p), 0.5, smoothstep(0.35, 1.0, fp));
         p = p * 2.03 + vec3(17.1, 9.7, 3.3); fp *= 2.03; a *= 0.5;
     }
@@ -155,7 +158,7 @@ Star makeStar(vec4 x, float M, float lapse) {
     s.beta = mix(0.20, 0.08, s.conv);                          // gravity-darkening exponent
     // Normalise von Zeipel darkening so the area-averaged T^4 equals Teff^4.
     float tot = 0.0, area = 0.0;
-    for (int j = 0; j < 24; j++) {
+    for (int j = 0; j < 24 + ZERO; j++) {
         float z = (float(j) + 0.5) / 24.0;
         vec3 n = vec3(sqrt(1.0 - z * z), z, 0.0), p = n * vec3(s.eq, 1.0, s.eq);
         float da = length(n / vec3(s.eq, 1.0, s.eq)) * s.eq * s.eq;
@@ -261,10 +264,10 @@ int uiHit(vec2 px, vec2 res, bool hidden) {
     if (hidden) return (p.x > 890.0 && p.x < 950.0 && p.y < 34.0) ? 27 : -1;
     if (p.y < 0.0 || p.y > 74.0 || p.x < 0.0 || p.x > 960.0) return -1;
     if (p.y < 40.0) {
-        for (int k = 0; k < 4; k++) { vec2 s = sliderSpan(k); if (p.x > s.x - 8.0 && p.x < s.y + 8.0) return k; }
+        for (int k = 0; k < 4 + ZERO; k++) { vec2 s = sliderSpan(k); if (p.x > s.x - 8.0 && p.x < s.y + 8.0) return k; }
         return 99;
     }
-    for (int k = 0; k < NSTARS; k++) if (p.x > starX(k) - 6.0 && p.x < starX(k) + starW(k) + 6.0) return 10 + k;
+    for (int k = 0; k < NSTARS + ZERO; k++) if (p.x > starX(k) - 6.0 && p.x < starX(k) + starW(k) + 6.0) return 10 + k;
     if (p.x > 552.0 && p.x < 616.0) return 20;
     if (p.x > 617.0 && p.x < 654.0) return 21;
     if (p.x > 672.0 && p.x < 722.0) return 22;

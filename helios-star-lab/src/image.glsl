@@ -60,7 +60,7 @@ void mainImage(out vec4 O, in vec2 P) {
     // Bottom panel.
     if (p.y < 76.0 && p.y > -2.0 && p.x > 0.0 && p.x < 960.0) {
         if (p.y > 40.0) {
-            for (int k = 0; k < NSTARS; k++) {
+            for (int k = 0; k < NSTARS + ZERO; k++) {
                 if (abs(p.x - starX(k) - 0.5 * starW(k)) > 0.5 * starW(k) + 8.0) continue;
                 text(col, p, vec2(starX(k), 51.0), 14.0, TL_STAR + k, k == star ? INK : MUTED);
                 if (k == star) col = mix(col, ACC, seg(p, vec2(starX(k), 45.5), vec2(starX(k) + starW(k), 45.5), 0.6));
@@ -80,7 +80,7 @@ void mainImage(out vec4 O, in vec2 P) {
         } else {
             // The four sliders. The tick marks the real star's value once you move away from it.
             vec4 pre = presetSliders(star);
-            for (int k = 0; k < 4; k++) {
+            for (int k = 0; k < 4 + ZERO; k++) {
                 vec2 sp = sliderSpan(k);
                 if (p.x < sp.x - 10.0 || p.x > sp.y + 10.0) continue;
                 float v = k == 0 ? slide.x : k == 1 ? slide.y : k == 2 ? slide.z : slide.w;

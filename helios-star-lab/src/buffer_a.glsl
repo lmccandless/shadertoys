@@ -53,7 +53,7 @@ const vec3 CIE[41] = vec3[41](
 vec4 planckEntry(int i) {
     float T = 1000.0 * pow(100.0, float(i) / 255.0);
     vec3 xyz = vec3(0);
-    for (int j = 0; j < 41; j++) {
+    for (int j = 0; j < 41 + ZERO; j++) {
         float w = (380.0 + 10.0 * float(j)) * 1e-3, w5 = w * w * w * w * w;
         xyz += CIE[j] / (w5 * (exp(14387.77 / (w * T)) - 1.0));
     }
@@ -116,15 +116,15 @@ Region makeRegion(Star s, int k, float days, float flareClock) {
 
 // One string at a time is composed into a global scratch buffer (no array copies).
 uint SW[16]; int SN;
-void str() { for (int i = 0; i < 16; i++) SW[i] = 0u; SN = 0; }
+void str() { for (int i = 0; i < 16 + ZERO; i++) SW[i] = 0u; SN = 0; }
 // The table is decoded once, on the reset frame, into rows 8+ (one char per channel).
 uint textChar(ivec2 t, int i) { int j = t.x + i, x = j >> 2; vec4 v = fetch(iChannel0, x % 256, 8 + x / 256); int c = j & 3; return uint(c == 0 ? v.x : c == 1 ? v.y : c == 2 ? v.z : v.w); }
 void put(uint c) { if (SN < 60) { SW[SN >> 2] |= c << uint(8 * (SN & 3)); SN++; } }
-void putT(ivec2 t) { for (int i = 0; i < t.y; i++) put(textChar(t, i)); }
+void putT(ivec2 t) { for (int i = 0; i < t.y + ZERO; i++) put(textChar(t, i)); }
 void putInt(int v) {
     int d = 1;
-    for (int k = 0; k < 8; k++) if (d * 10 <= v) d *= 10;
-    for (int k = 0; k < 9; k++) { put(uint(48 + (v / d) % 10)); if (d == 1) break; d /= 10; }
+    for (int k = 0; k < 8 + ZERO; k++) if (d * 10 <= v) d *= 10;
+    for (int k = 0; k < 9 + ZERO; k++) { put(uint(48 + (v / d) % 10)); if (d == 1) break; d /= 10; }
 }
 void putFix(float v, int dec) {
     int m = dec == 0 ? 1 : dec == 1 ? 10 : dec == 2 ? 100 : dec == 3 ? 1000 : 10000;
@@ -133,7 +133,7 @@ void putFix(float v, int dec) {
     if (dec > 0) {
         put(46u);
         int fr = n - ip * m, d = m / 10;
-        for (int k = 0; k < 4; k++) { if (k >= dec) break; put(uint(48 + (fr / d) % 10)); d = max(d / 10, 1); }
+        for (int k = 0; k < 4 + ZERO; k++) { if (k >= dec) break; put(uint(48 + (fr / d) % 10)); d = max(d / 10, 1); }
     }
 }
 void putSig(float v) { putFix(v, v >= 100.0 ? 0 : v >= 10.0 ? 1 : v >= 1.0 ? 2 : v >= 0.1 ? 3 : 4); }
@@ -217,9 +217,9 @@ void mainImage(out vec4 O, in vec2 P) {
         composeLine(L, loadStar(iChannel0));
         if (p.y == 7) { O = vec4(float(SN), 0, 0, 0); return; }
         int base = 12 * (p.x % 5);
-        for (int c = 0; c < 4; c++) {
+        for (int c = 0; c < 4 + ZERO; c++) {
             uint v = 0u;
-            for (int b = 0; b < 3; b++) { int i = base + 3 * c + b; v |= ((SW[i >> 2] >> uint(8 * (i & 3))) & 255u) << uint(8 * b); }
+            for (int b = 0; b < 3 + ZERO; b++) { int i = base + 3 * c + b; v |= ((SW[i >> 2] >> uint(8 * (i & 3))) & 255u) << uint(8 * b); }
             O[c] = float(v);
         }
         return;

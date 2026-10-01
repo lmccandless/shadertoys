@@ -12,7 +12,7 @@
 Star S; vec4 CTRL, CLOCK; vec3 AX;
 vec3 RN[NREG]; float RE[NREG];
 vec4 SRC[2 * NREG]; int NSRC;
-float FIL;                                // filament opacity along this pixel
+float FIL, FAN = 0.5;                                // filament opacity along this pixel
 
 // ---- Chromospheric material held by the field -------------------------------------------------
 // The surface field gives two things the EUV disc needs. Its horizontal direction: chromospheric
@@ -21,15 +21,16 @@ float FIL;                                // filament opacity along this pixel
 // them, away from plage; past the limb the same material shows as prominences.
 vec3 surfaceField(vec3 n) {
     vec3 p = n * 1.008, B = dipoleField(p, S.dipole);
-    for (int i = 0; i < NSRC; i++) B += sourceField(p, SRC[i]);
+    for (int i = 0; i < NSRC + ZERO; i++) B += sourceField(p, SRC[i]);
     return B;
 }
-float filament(vec3 n, out vec3 t) {
+float filament(vec3 n, out vec3 t, out float horiz) {
     vec3 B = surfaceField(n);
+    horiz = 1.0 - abs(dot(normalize(B + 1e-9), n));
     float br = dot(B, n), bm = length(B) + 1e-6;
     vec3 bt = B - br * n; t = bt / max(length(bt), 1e-6);
     float act = 0.0;
-    for (int k = 0; k < NREG; k++) if (RE[k] > 0.0) act += RE[k] * exp(-(1.0 - dot(n, RN[k])) / 0.012);
+    for (int k = 0; k < NREG + ZERO; k++) if (RE[k] > 0.0) act += RE[k] * exp(-(1.0 - dot(n, RN[k])) / 0.012);
     float wob = 0.6 + 0.8 * vnoise(n * 30.0);
     float q = sq(br / bm);
     float pil = exp(-q / (0.006 * wob)) + 0.25 * exp(-q / 0.05);    // ribbon plus its channel
@@ -38,14 +39,14 @@ float filament(vec3 n, out vec3 t) {
 }
 float streaks(vec3 n, vec3 t, float scale, float fp) {
     float a = 0.0;
-    for (int k = -4; k <= 4; k++) a += vnoise((n + t * (float(k) * 1.1 / scale)) * scale);
+    for (int k = -4; k <= 4 + ZERO; k++) a += vnoise((n + t * (float(k) * 1.1 / scale)) * scale);
     return mix(a / 9.0, 0.5, smoothstep(0.3, 1.0, fp * scale));
 }
 
 vec3 voronoi(vec3 p, float t) {
     vec3 c = floor(p), f = fract(p);
     float d1 = 8.0, d2 = 8.0, id = 0.0;
-    for (int k = 0; k < 27; k++) {
+    for (int k = 0; k < 27 + ZERO; k++) {
         vec3 o = vec3(float(k % 3) - 1.0, float((k / 3) % 3) - 1.0, float(k / 9) - 1.0);
         vec3 h = hash33(c + o);
         vec3 d = o + 0.5 + 0.36 * sin(TAU * (h + t * (0.6 + 0.8 * h.zxy))) - f;
@@ -91,7 +92,7 @@ vec3 surface(vec3 s, float mu, float fp, bool euv) {
     float fine = fbm(s * 90.0, fp * 90.0, 3);
     T *= 1.0 + S.cgran * gr * (1.0 - 0.7 * S.giant) + 0.07 * S.giant * gc;
     float umbra = 0.0, pen = 0.0, plage = 0.0, flare = 0.0;
-    for (int k = 0; k < NREG; k++) {
+    for (int k = 0; k < NREG + ZERO; k++) {
         if (RE[k] <= 0.0) continue;
         Region g = loadRegion(iChannel0, k);
         float reach = g.a + 4.0 * g.w + 0.04;
@@ -138,18 +139,17 @@ vec3 surface(vec3 s, float mu, float fp, bool euv) {
     float E = S.conv * (0.06 + 0.75 * S.alpha) * (0.12 + 1.5 * sq(smoothstep(0.3, 0.8, mott)) + 0.9 * sq(sq(grain)) * 2.0)
             * (1.0 - 0.35 * chan * (1.0 - sat(plage))) * (1.0 - 0.7 * hole);
     if (S.alpha > 0.0) {
-        vec3 t; float fil = filament(s, t);
+        vec3 t; float horiz; float fil = filament(s, t, horiz);
         float fib = streaks(s, t, 70.0, fp), thr = streaks(s, t, 260.0, fp);
+        FAN = streaks(s, t, 330.0, fp);
         // Dark fibrils everywhere the field lies flat, densest around plage; filaments on top.
-        float horiz = 1.0 - abs(dot(normalize(surfaceField(s)), s));
         E *= 1.0 - 0.6 * smoothstep(0.5, 0.36, fib) * horiz * (0.25 + sat(2.0 * plage));
         float lumps = smoothstep(0.25, 0.7, vnoise(s * 55.0 + 3.0 * t));
         FIL = 0.8 * smoothstep(0.05, 1.0, fil) * mix(0.35, 1.0, lumps) * (0.6 + 0.6 * thr);
     }
     E += S.chromo * 0.5 * (0.6 + 0.8 * fbm(s * 4.0 + CLOCK.z * 0.01, fp * 4.0, 3));
     // Plage glows in fans of fine threads that follow the field out of each polarity.
-    float fan = 1.0;
-    if (plage > 0.02) { vec3 tf; filament(s, tf); fan = 0.35 + 1.5 * smoothstep(0.35, 0.75, streaks(s, tf, 330.0, fp)); }
+    float fan = plage > 0.02 ? 0.35 + 1.5 * smoothstep(0.35, 0.75, FAN) : 1.0;
     E += (2.4 * plage + 1.2 * sq(plage)) * filigree * fan * (1.0 - 0.6 * umbra) + 5.0 * flare;
     E *= 1.0 + 0.8 * sq(1.0 - mu);
     E += 2.0 * exp(-473289.0 * (1.0 / T - 1.0 / 25000.0)) + 0.035;
@@ -173,14 +173,14 @@ vec2 atmosphere(vec3 ro, vec3 rd, float tEnd, bool euv) {
     float dt = (t1 - t0) / float(N), t = t0 + dt * hash13(vec3(gl_FragCoord.xy, CLOCK.w));
     vec3 m = normalize(S.dipole + vec3(0, 1e-6, 0));
     float E = 0.0, tau = 0.0;
-    for (int i = 0; i < N; i++) {
+    for (int i = 0; i < N + ZERO; i++) {
         vec3 x = ro + rd * t; float r = length(x), hh = max(r - 1.0, 0.0); vec3 n = x / r;
         if (euv) {
             if (S.alpha > 0.0) {
                 float dens = exp(-(1.0 / H) * (1.0 - 1.0 / r));
                 float md = dot(n, m), belt = exp(-md * md / (0.10 / (1.0 + 1.5 * hh)));
                 float ar = 0.0;
-                for (int k = 0; k < NREG; k++) if (RE[k] > 0.0) ar += RE[k] * exp(-(1.0 - dot(n, RN[k])) / (0.004 + 0.03 * hh));
+                for (int k = 0; k < NREG + ZERO; k++) if (RE[k] > 0.0) ar += RE[k] * exp(-(1.0 - dot(n, RN[k])) / (0.004 + 0.03 * hh));
                 float rays = vnoise(n * 38.0) * 0.7 + vnoise(n * 11.0) * 0.6;
                 float hole = smoothstep(0.65, 0.9, abs(md)) * (0.35 + 0.65 * abs(cos(PI * S.cycle)));
                 E += dens * dens * (0.3 + 1.6 * belt + 2.5 * ar) * (0.4 + rays) * (1.0 - 0.7 * hole) * (0.35 + 0.5 * S.alpha) * 1.3;
@@ -192,7 +192,7 @@ vec2 atmosphere(vec3 ro, vec3 rd, float tEnd, bool euv) {
             }
             if (S.alpha > 0.0 && tEnd < 0.0 && hh < 0.09) {
                 // Prominence: the filament seen edge-on, clumpy vertical threads.
-                vec3 tt; float fil = filament(n, tt);
+                vec3 tt; float hz; float fil = filament(n, tt, hz);
                 if (fil > 0.01) {
                     float thr = vnoise(vec3(n * 240.0) + vec3(0.0, hh * 25.0, 0.0)) * vnoise(n * 70.0 + vec3(hh * 12.0));
                     E += 30.0 * smoothstep(0.1, 0.5, fil) * exp(-hh / 0.035) * smoothstep(0.0, 0.006, hh) * (0.15 + 2.0 * thr * thr);
@@ -228,10 +228,10 @@ void fieldLines(vec3 ro, vec3 rd, float tEnd, float fp, vec2 px, bool euv, bool 
     vec2 res = iResolution.xy;
     int tx = (int(res.x) + TILE - 1) / TILE, tile = int(px.x) / TILE + (int(px.y) / TILE) * tx;
     float lim = tEnd > 0.0 ? tEnd : 1e5;
-    for (int g = 0; g < 4; g++) {
+    for (int g = 0; g < 4 + ZERO; g++) {
         int j = tile * 4 + g, w = int(res.x);
         uvec4 mask = uvec4(texelFetch(iChannel2, ivec2(j % w, j / w), 0));
-        for (int ch = 0; ch < 4; ch++) {
+        for (int ch = 0; ch < 4 + ZERO; ch++) {
             uint bits = ch == 0 ? mask.x : ch == 1 ? mask.y : ch == 2 ? mask.z : mask.w;
             while (bits != 0u) {
                 int bit = int(log2(float(bits & (~bits + 1u))) + 0.5); bits &= bits - 1u;
@@ -240,7 +240,7 @@ void fieldLines(vec3 ro, vec3 rd, float tEnd, float fp, vec2 px, bool euv, bool 
                 bool closed = meta.z > 0.5, cold = meta.w > 0.5;
                 vec3 tint = closed ? vec3(1.0, 0.80, 0.52) : (meta.y > 0.0 ? vec3(1.0, 0.32, 0.62) : vec3(0.30, 0.68, 1.0));
                 float ebase = meta.x * (closed ? 1.0 : 0.30), eeuv = sqrt(meta.x) * (closed ? 2.2 : 0.04);
-                for (int c = 0; c < 8; c++) {
+                for (int c = 0; c < 8 + ZERO; c++) {
                     vec4 bd = node(line, NODES + c);
                     if (bd.w < 0.0) break;
                     vec3 v = bd.xyz - ro; float tc = dot(v, rd);
@@ -248,7 +248,7 @@ void fieldLines(vec3 ro, vec3 rd, float tEnd, float fp, vec2 px, bool euv, bool 
                     if (dot(v, v) - tc * tc > pad * pad || tc + bd.w < 0.0 || tc - bd.w > lim) continue;
                     vec4 a = node(line, 8 * c);
                     int last = c == 7 ? 7 : 8;
-                    for (int q = 1; q <= last; q++) {
+                    for (int q = 1; q <= last + ZERO; q++) {
                         vec4 b = node(line, 8 * c + q);
                         vec3 ab = b.xyz - a.xyz;
                         float ta = dot(a.xyz - ro, rd), tb = dot(b.xyz - ro, rd);
@@ -298,9 +298,9 @@ void fieldLines(vec3 ro, vec3 rd, float tEnd, float fp, vec2 px, bool euv, bool 
 void mainImage(out vec4 O, in vec2 P) {
     vec2 res = iResolution.xy;
     S = loadStar(iChannel0); CTRL = fetch(iChannel0, S_CTRL, 0); CLOCK = fetch(iChannel0, S_CLOCK, 0); AX = starAxes(S);
-    for (int k = 0; k < NREG; k++) { RN[k] = fetch(iChannel0, k, 3).xyz; RE[k] = fetch(iChannel0, k, 5).x; }
+    for (int k = 0; k < NREG + ZERO; k++) { RN[k] = fetch(iChannel0, k, 3).xyz; RE[k] = fetch(iChannel0, k, 5).x; }
     NSRC = 0;
-    for (int i = 0; i < 2 * NREG; i++) { vec4 q = fetch(iChannel0, i, 2); if (q.w != 0.0) { SRC[NSRC] = q; NSRC++; } }
+    for (int i = 0; i < 2 * NREG + ZERO; i++) { vec4 q = fetch(iChannel0, i, 2); if (q.w != 0.0) { SRC[NSRC] = q; NSRC++; } }
     bool euv = CTRL.y > 0.5, overlay = CTRL.z > 0.5;
     Cam k = starCam(makeCam(fetch(iChannel0, S_CAM, 0), res), CLOCK.y);
     vec3 rdw = camRay(k, P);

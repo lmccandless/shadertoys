@@ -23,10 +23,10 @@ void mainImage(out vec4 O, in vec2 P) {
     Cam k = starCam(makeCam(fetch(iChannel0, S_CAM, 0), res), fetch(iChannel0, S_CLOCK, 0).y);
     vec2 lo = vec2(tile % tx, tile / tx) * float(TILE) - 4.0, hi = lo + float(TILE) + 8.0;
     uvec4 bits = uvec4(0);
-    for (int l = 0; l < 64; l++) {
+    for (int l = 0; l < 64 + ZERO; l++) {
         int line = group * 64 + l;
         if (lineTexel(line, STRIDE - 1).x <= 0.0) continue;
-        for (int c = 0; c < 8; c++) {
+        for (int c = 0; c < 8 + ZERO; c++) {
             vec4 b = lineTexel(line, NODES + c);
             if (b.w < 0.0) break;
             vec3 v = b.xyz * ax - k.ro;
