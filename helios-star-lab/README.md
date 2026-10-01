@@ -9,12 +9,17 @@ supergiant convection cells.
 
 **Stars:** Sun, AB Doradus A, Proxima Centauri, Arcturus, Betelgeuse, Altair, Rigel, Sirius B.
 
+![Sun, EUV](shots/sun-euv.png) ![Sun, EUV x2: plage fans and dark filament material](shots/sun-euv-zoom.png)
+![Sun, visible](shots/sun-visible.png) ![Betelgeuse](shots/betelgeuse.png)
+![Altair](shots/altair.png) ![AB Doradus, EUV](shots/abdor-euv.png)
+![Proxima, EUV](shots/proxima-euv.png) ![Rigel, EUV](shots/rigel-euv.png)
+
 ## Controls
 
 - **Star names** (bottom row): pick a star. Click the selected one again to undo slider changes.
 - **Temperature / Radius / Rotation / Cycle**: the orange tick marks the real star's value.
   Rotation is a fraction of breakup speed; the readout is the period that implies.
-- **Visible / EUV**: true colour, or He II 30.4 nm-style extreme ultraviolet (false colour).
+- **Visible / EUV**: true colour, or He II 30.4 nm-style extreme ultraviolet (false colour; the default).
 - **Field**: overlay the traced field lines (warm: closed loops; magenta/blue: open field by polarity).
 - **Pause**, **- x1 +** zoom (to x64, enough to resolve solar granulation), **Hide** the interface.
 - **Drag** anywhere else to orbit.

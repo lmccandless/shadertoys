@@ -53,10 +53,13 @@ vec3 surface(vec3 s, float mu, float fp, bool euv) {
     float gc = 0.0;
     if (S.giant > 0.0) {
         vec3 wp = s * 2.4 + 0.8 * vec3(vnoise(s * 2.0 + 7.1), vnoise(s * 2.0 + 1.3), vnoise(s * 2.0 + 4.7)) - 0.4;
-        gc = convection(wp, CLOCK.z * 0.15, fp * 2.4, 0.35) + 0.9 * (fbm(s * 5.0 + wp, fp * 5.0, 3) - 0.5);
+        // Supergiant surfaces (3D RHD, e.g. Chiavassa+ 2011) are soft bright plumes over dark
+        // downflows, not a cell network: warped, sharpened fBm.
+        float b1 = fbm(s * 2.6 + 1.6 * wp + CLOCK.z * 0.004, fp * 2.6, 4), b2 = fbm(s * 8.0 + 2.0 * wp, fp * 8.0, 3);
+        gc = 2.6 * (smoothstep(0.30, 0.72, b1) - 0.5) + 0.8 * (b2 - 0.5);
     }
     float fine = fbm(s * 90.0, fp * 90.0, 3);
-    T *= 1.0 + S.cgran * gr * (1.0 - 0.7 * S.giant) + 0.10 * S.giant * gc;
+    T *= 1.0 + S.cgran * gr * (1.0 - 0.7 * S.giant) + 0.07 * S.giant * gc;
     float umbra = 0.0, pen = 0.0, plage = 0.0, flare = 0.0;
     for (int k = 0; k < NREG; k++) {
         if (RE[k] <= 0.0) continue;
@@ -138,12 +141,12 @@ vec2 atmosphere(vec3 ro, vec3 rd, float tEnd, bool euv) {
                 for (int k = 0; k < NREG; k++) if (RE[k] > 0.0) ar += RE[k] * exp(-(1.0 - dot(n, RN[k])) / (0.004 + 0.03 * hh));
                 float rays = vnoise(n * 38.0) * 0.7 + vnoise(n * 11.0) * 0.6;
                 float hole = smoothstep(0.65, 0.9, abs(md)) * (0.35 + 0.65 * abs(cos(PI * S.cycle)));
-                E += dens * dens * (0.3 + 1.6 * belt + 2.5 * ar) * (0.4 + rays) * (1.0 - 0.7 * hole) * (0.4 + 1.5 * S.alpha) * 1.6;
+                E += dens * dens * (0.3 + 1.6 * belt + 2.5 * ar) * (0.4 + rays) * (1.0 - 0.7 * hole) * (0.35 + 0.5 * S.alpha) * 1.3;
             }
             if (S.wind > 0.0) {
                 float v = 0.02 + pow(max(1.0 - 0.98 / r, 0.0), 1.0), rho = min(1.0 / (r * r * v), 25.0);
                 float cl = vnoise(vec3(n * 16.0) + vec3(0.0, 0.0, 5.0 * (r - CLOCK.w * 0.12)));
-                E += S.wind * 0.004 * rho * rho * (0.25 + 3.0 * cl * cl * cl);
+                E += S.wind * 0.05 * pow(rho, 1.5) * (0.2 + 3.0 * cl * cl * cl);
             }
             if (S.conv > 0.0 && hh < 0.03) {
                 float sp = vnoise(vec3(n * 260.0)) * vnoise(vec3(n * 90.0) + 3.1);

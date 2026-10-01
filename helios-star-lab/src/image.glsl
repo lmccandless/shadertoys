@@ -35,10 +35,11 @@ vec3 srgb(vec3 c) { return mix(c * 12.92, 1.055 * pow(c, vec3(1.0 / 2.4)) - 0.05
 
 void mainImage(out vec4 O, in vec2 P) {
     vec2 res = iResolution.xy, uv = P / res;
+    vec4 ctrl0 = fetch(iChannel1, S_CTRL, 0);
     vec3 sc = textureLod(iChannel0, uv, 0.0).rgb;
     vec3 glare = 0.30 * textureLod(iChannel0, uv, 2.5).rgb + 0.35 * textureLod(iChannel0, uv, 4.5).rgb + 0.35 * textureLod(iChannel0, uv, 6.5).rgb;
     // Hue-preserving: tone-map luminance, keep chromaticity, roll very bright colour toward white.
-    vec3 hdr = 0.45 * (sc + 0.09 * glare);
+    vec3 hdr = (ctrl0.y > 0.5 ? 0.45 : 0.30) * (sc + 0.09 * glare);
     float Y = dot(hdr, vec3(0.2126, 0.7152, 0.0722)), Yt = aces(vec3(Y)).x;
     vec3 tm = hdr * (Yt / max(Y, 1e-5));
     tm = mix(tm, vec3(Yt), sat((max(tm.r, max(tm.g, tm.b)) - 1.0) * 1.5));
