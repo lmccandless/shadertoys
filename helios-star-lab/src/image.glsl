@@ -51,30 +51,12 @@ void mainImage(out vec4 O, in vec2 P) {
     int star = int(ctrl.x + 0.5);
     U = uiScale(res);
     vec2 p = uiPoint(P, res);
-    float top = res.y / U;
     if (cam.w > 0.5) {
         text(col, p, vec2(906, 14), 13.0, TL_SHOW, MUTED);
         O = vec4(col, 1); return;
     }
-    col *= mix(0.30, 1.0, smoothstep(0.0, 92.0, p.y));
+    col *= mix(0.45, 1.0, smoothstep(0.0, 80.0, p.y));
 
-    // Top left: the star, what its parameters mean, its numbers (solar units).
-    if (p.y > top - 120.0 && p.x < 640.0) {
-        text(col, p, vec2(20, top - 42.0), 26.0, TL_TITLE, INK);
-        text(col, p, vec2(34.0 + 13.0 * tlen(TL_TITLE), top - 42.0), 15.0, TL_CLASS, MUTED);
-        text(col, p, vec2(20, top - 66.0), 13.0, TL_REGIME, ACC);
-        text(col, p, vec2(20, top - 88.0), 12.0, TL_NUM1, MUTED);
-        text(col, p, vec2(20, top - 106.0), 12.0, TL_NUM2, MUTED);
-    }
-    // Top right: view, time-lapse, scale bar.
-    if (p.y > top - 100.0 && p.x > 600.0) {
-        textR(col, p, vec2(940, top - 42.0), 12.0, TL_VIEW, MUTED);
-        textR(col, p, vec2(940, top - 62.0), 12.0, TL_LAPSE, MUTED);
-        float len = fetch(iChannel1, TL_SCALE, 7).y;
-        vec2 a = vec2(940.0 - len, top - 82.0), b = vec2(940, top - 82.0);
-        col = mix(col, MUTED, max(seg(p, a, b, 0.6), max(seg(p, a, a + vec2(0, 5), 0.6), seg(p, b, b + vec2(0, 5), 0.6))));
-        textR(col, p, vec2(a.x - 8.0, top - 86.0), 12.0, TL_SCALE, MUTED);
-    }
     // Bottom panel.
     if (p.y < 76.0 && p.y > -2.0 && p.x > 0.0 && p.x < 960.0) {
         if (p.y > 40.0) {

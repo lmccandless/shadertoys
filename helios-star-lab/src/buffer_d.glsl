@@ -11,6 +11,36 @@
 
 Star S; vec4 CTRL, CLOCK; vec3 AX;
 vec3 RN[NREG]; float RE[NREG];
+vec4 SRC[2 * NREG]; int NSRC;
+float FIL;                                // filament opacity along this pixel
+
+// ---- Chromospheric material held by the field -------------------------------------------------
+// The surface field gives two things the EUV disc needs. Its horizontal direction: chromospheric
+// fibrils are dense material stretched along it (line-integral convolution of noise). And its
+// polarity inversion lines: filaments are long dark ribbons of cool plasma suspended low above
+// them, away from plage; past the limb the same material shows as prominences.
+vec3 surfaceField(vec3 n) {
+    vec3 p = n * 1.008, B = dipoleField(p, S.dipole);
+    for (int i = 0; i < NSRC; i++) B += sourceField(p, SRC[i]);
+    return B;
+}
+float filament(vec3 n, out vec3 t) {
+    vec3 B = surfaceField(n);
+    float br = dot(B, n), bm = length(B) + 1e-6;
+    vec3 bt = B - br * n; t = bt / max(length(bt), 1e-6);
+    float act = 0.0;
+    for (int k = 0; k < NREG; k++) if (RE[k] > 0.0) act += RE[k] * exp(-(1.0 - dot(n, RN[k])) / 0.012);
+    float wob = 0.6 + 0.8 * vnoise(n * 30.0);
+    float q = sq(br / bm);
+    float pil = exp(-q / (0.006 * wob)) + 0.25 * exp(-q / 0.05);    // ribbon plus its channel
+    float seg = smoothstep(0.42, 0.62, vnoise(n * 4.5 + 11.3));        // only some stretches erupt into view
+    return pil * seg * (1.0 - sat(3.0 * act)) * smoothstep(0.0, 0.02, length(S.dipole) + float(NSRC) * 0.01);
+}
+float streaks(vec3 n, vec3 t, float scale, float fp) {
+    float a = 0.0;
+    for (int k = -4; k <= 4; k++) a += vnoise((n + t * (float(k) * 1.1 / scale)) * scale);
+    return mix(a / 9.0, 0.5, smoothstep(0.3, 1.0, fp * scale));
+}
 
 vec3 voronoi(vec3 p, float t) {
     vec3 c = floor(p), f = fract(p);
@@ -100,15 +130,27 @@ vec3 surface(vec3 s, float mu, float fp, bool euv) {
     // Chromospheric mottling: domain-warped, so it swirls, with large dark filament channels.
     float drift = CLOCK.z * 0.004;
     vec3 wv = vec3(fbm(s * 6.0 + drift, fp * 6.0, 3), fbm(s * 6.0 + 5.2 - drift, fp * 6.0, 3), fbm(s * 6.0 + 9.1, fp * 6.0, 3)) - 0.5;
-    float mott = fbm(s * 24.0 + 2.2 * wv, fp * 24.0, 4);
+    float mott = fbm(s * 40.0 + 2.6 * wv, fp * 40.0, 4);
     float grain = fbm(s * 75.0 + 3.0 * wv, fp * 75.0, 3);
     float chan = smoothstep(0.50, 0.30, fbm(s * 4.0 + 3.0 * wv, fp * 4.0, 3));
     vec3 m = normalize(S.dipole + vec3(0, 1e-6, 0));
     float hole = smoothstep(0.62, 0.85, abs(dot(s, m))) * (0.35 + 0.65 * abs(cos(PI * S.cycle)));
     float E = S.conv * (0.06 + 0.75 * S.alpha) * (0.12 + 1.5 * sq(smoothstep(0.3, 0.8, mott)) + 0.9 * sq(sq(grain)) * 2.0)
-            * (1.0 - 0.65 * chan * (1.0 - sat(plage))) * (1.0 - 0.7 * hole);
+            * (1.0 - 0.35 * chan * (1.0 - sat(plage))) * (1.0 - 0.7 * hole);
+    if (S.alpha > 0.0) {
+        vec3 t; float fil = filament(s, t);
+        float fib = streaks(s, t, 70.0, fp), thr = streaks(s, t, 260.0, fp);
+        // Dark fibrils everywhere the field lies flat, densest around plage; filaments on top.
+        float horiz = 1.0 - abs(dot(normalize(surfaceField(s)), s));
+        E *= 1.0 - 0.6 * smoothstep(0.5, 0.36, fib) * horiz * (0.25 + sat(2.0 * plage));
+        float lumps = smoothstep(0.25, 0.7, vnoise(s * 55.0 + 3.0 * t));
+        FIL = 0.8 * smoothstep(0.05, 1.0, fil) * mix(0.35, 1.0, lumps) * (0.6 + 0.6 * thr);
+    }
     E += S.chromo * 0.5 * (0.6 + 0.8 * fbm(s * 4.0 + CLOCK.z * 0.01, fp * 4.0, 3));
-    E += (3.5 * plage + 2.0 * sq(plage)) * filigree * (1.0 - 0.6 * umbra) + 5.0 * flare;
+    // Plage glows in fans of fine threads that follow the field out of each polarity.
+    float fan = 1.0;
+    if (plage > 0.02) { vec3 tf; filament(s, tf); fan = 0.35 + 1.5 * smoothstep(0.35, 0.75, streaks(s, tf, 330.0, fp)); }
+    E += (2.4 * plage + 1.2 * sq(plage)) * filigree * fan * (1.0 - 0.6 * umbra) + 5.0 * flare;
     E *= 1.0 + 0.8 * sq(1.0 - mu);
     E += 2.0 * exp(-473289.0 * (1.0 / T - 1.0 / 25000.0)) + 0.035;
     return vec3(E, 0, 0);
@@ -148,6 +190,14 @@ vec2 atmosphere(vec3 ro, vec3 rd, float tEnd, bool euv) {
                 float cl = vnoise(vec3(n * 16.0) + vec3(0.0, 0.0, 5.0 * (r - CLOCK.w * 0.12)));
                 E += S.wind * 0.05 * pow(rho, 1.5) * (0.2 + 3.0 * cl * cl * cl);
             }
+            if (S.alpha > 0.0 && tEnd < 0.0 && hh < 0.09) {
+                // Prominence: the filament seen edge-on, clumpy vertical threads.
+                vec3 tt; float fil = filament(n, tt);
+                if (fil > 0.01) {
+                    float thr = vnoise(vec3(n * 240.0) + vec3(0.0, hh * 25.0, 0.0)) * vnoise(n * 70.0 + vec3(hh * 12.0));
+                    E += 30.0 * smoothstep(0.1, 0.5, fil) * exp(-hh / 0.035) * smoothstep(0.0, 0.006, hh) * (0.15 + 2.0 * thr * thr);
+                }
+            }
             if (S.conv > 0.0 && hh < 0.03) {
                 float sp = vnoise(vec3(n * 260.0)) * vnoise(vec3(n * 90.0) + 3.1);
                 E += S.conv * (0.4 + S.alpha) * 14.0 * exp(-hh / (0.004 + 0.012 * sp)) * (0.3 + sp);
@@ -171,9 +221,8 @@ vec4 node(int line, int slot) {
     return texelFetch(iChannel1, ivec2(j % w, j / w), 0);
 }
 // Overlay: thin lines (closed loops warm, open field by polarity). EUV: emitting loops.
-// EUV: hot loops rooted in plage glow; cool loops between quiet or decayed flux carry dense
-// chromospheric material that absorbs what lies behind it (filaments on the disc) and glows
-// faintly off the limb (prominences). Both are clumpy: condensations, not uniform strings.
+// EUV: loops rooted in plage glow as clumpy condensations, not uniform strings. Low loops over
+// quiet or decayed flux are skipped: their cool material is drawn from the surface field instead.
 void fieldLines(vec3 ro, vec3 rd, float tEnd, float fp, vec2 px, bool euv, bool overlay, out vec4 ov, out float uv, out vec2 cool) {
     ov = vec4(0); uv = 0.0; cool = vec2(0);
     vec2 res = iResolution.xy;
@@ -190,7 +239,7 @@ void fieldLines(vec3 ro, vec3 rd, float tEnd, float fp, vec2 px, bool euv, bool 
                 vec4 meta = node(line, STRIDE - 1);
                 bool closed = meta.z > 0.5, cold = meta.w > 0.5;
                 vec3 tint = closed ? vec3(1.0, 0.80, 0.52) : (meta.y > 0.0 ? vec3(1.0, 0.32, 0.62) : vec3(0.30, 0.68, 1.0));
-                float ebase = meta.x * (closed ? 1.0 : 0.30), eeuv = sqrt(meta.x) * (closed ? 1.1 : 0.04);
+                float ebase = meta.x * (closed ? 1.0 : 0.30), eeuv = sqrt(meta.x) * (closed ? 2.2 : 0.04);
                 for (int c = 0; c < 8; c++) {
                     vec4 bd = node(line, NODES + c);
                     if (bd.w < 0.0) break;
@@ -227,8 +276,8 @@ void fieldLines(vec3 ro, vec3 rd, float tEnd, float fp, vec2 px, bool euv, bool 
                                     float prof = exp(-0.5 * d2 / (sg * sg)) * 0.5 * (er.x - er.y) * (sw / sg);
                                     vec3 fl = cp * 28.0 + float(line) * 1.7 + vec3(0.0, 0.0, CLOCK.w * 0.25);
                                     float blob = (0.3 + 0.7 * smoothstep(0.2, 0.8, vnoise(fl))) * (0.5 + 0.8 * vnoise(cp * 110.0 - CLOCK.w * 0.3));
-                                    if (cold) cool += vec2(3.5, 0.5) * prof * blob * (0.6 + meta.x) * smoothstep(0.004, 0.02, hh);
-                                    else {
+                                    blob = mix(blob, 0.75, smoothstep(0.08, 0.35, hh));
+                                    if (!cold) {
                                         // Diffuse clumpy plasma plus a faint fibril core.
                                         float sc = sqrt(0.0016 * 0.0016 + spx * spx), kc = sqrt(vv) / (1.4142 * sc);
                                         vec2 ec = erfa(vec2(1.0 - u, -u) * kc);
@@ -250,6 +299,8 @@ void mainImage(out vec4 O, in vec2 P) {
     vec2 res = iResolution.xy;
     S = loadStar(iChannel0); CTRL = fetch(iChannel0, S_CTRL, 0); CLOCK = fetch(iChannel0, S_CLOCK, 0); AX = starAxes(S);
     for (int k = 0; k < NREG; k++) { RN[k] = fetch(iChannel0, k, 3).xyz; RE[k] = fetch(iChannel0, k, 5).x; }
+    NSRC = 0;
+    for (int i = 0; i < 2 * NREG; i++) { vec4 q = fetch(iChannel0, i, 2); if (q.w != 0.0) { SRC[NSRC] = q; NSRC++; } }
     bool euv = CTRL.y > 0.5, overlay = CTRL.z > 0.5;
     Cam k = starCam(makeCam(fetch(iChannel0, S_CAM, 0), res), CLOCK.y);
     vec3 rdw = camRay(k, P);
@@ -260,7 +311,7 @@ void mainImage(out vec4 O, in vec2 P) {
     float tS = h > 0.0 ? -b - sqrt(h) : -1.0;
     float edge = sqrt(max(dot(ro, ro) - b * b, 0.0)) - 1.0, pxw = -b * fp;
     float cover = smoothstep(0.75 * pxw, -0.75 * pxw, edge);
-    vec3 col = vec3(0); float E = 0.0;
+    vec3 col = vec3(0); float E = 0.0; FIL = 0.0;
     if (cover > 0.0) {
         vec3 sp = h > 0.0 ? ro + rd * tS : normalize(ro - rd * b);
         vec3 nE = normalize(sp / AX);
@@ -273,7 +324,8 @@ void mainImage(out vec4 O, in vec2 P) {
     vec4 ov = vec4(0); float lu = 0.0; vec2 cl = vec2(0);
     if (euv || overlay) fieldLines(ro, rd, tS, fp / L, P, euv, overlay, ov, lu, cl);
     if (euv) {
-        E = (E + at.x + lu) * exp(-cl.x) + cl.y;
+        // Filaments sit in the low corona: they absorb the disc and the corona behind them.
+        E = (E + at.x + lu) * (1.0 - FIL * cover);
         col = palette304(log(1.0 + 2.2 * E) / log(1.0 + 2.2 * 2.5));
     } else {
         vec4 mol = planck(iChannel0, S.T * 0.6), ref = planck(iChannel0, S.T * 1.0574);

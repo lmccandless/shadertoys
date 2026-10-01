@@ -21,9 +21,8 @@ const int S_META  = 7;   // version, mass target, mass eased, time-lapse (days/s
 const int S_MODEL = 8;   // 8..15: packed Star
 // Row 1: Planck table. Row 2: field sources (2 per region). Rows 3-5: active regions. Rows 8+: text table.
 // Rows 6-7: interface text lines (see Buffer A), indexed by these:
-const int TL_TITLE = 0, TL_CLASS = 1, TL_REGIME = 2, TL_NUM1 = 3, TL_NUM2 = 4, TL_VIEW = 5, TL_LAPSE = 6, TL_SCALE = 7;
-const int TL_STAR = 8, TL_SLAB = 16, TL_SVAL = 20, TL_ZOOM = 24, TL_VIS = 25, TL_EUV = 26, TL_FIELD = 27, TL_PAUSE = 28;
-const int TL_HIDE = 29, TL_SHOW = 30, NTL = 31;
+const int TL_STAR = 0, TL_SLAB = 8, TL_SVAL = 12, TL_ZOOM = 16, TL_VIS = 17, TL_EUV = 18, TL_FIELD = 19, TL_PAUSE = 20;
+const int TL_HIDE = 21, TL_SHOW = 22, NTL = 23;
 const int NREG = 16;
 const int NSTARS = 8;
 

@@ -143,46 +143,6 @@ ivec2 starName(int k) {
     return k == 0 ? TXT("Sun") : k == 1 ? TXT("AB Dor") : k == 2 ? TXT("Proxima") : k == 3 ? TXT("Arcturus")
          : k == 4 ? TXT("Betelgeuse") : k == 5 ? TXT("Altair") : k == 6 ? TXT("Rigel") : TXT("Sirius B");
 }
-ivec2 starTitle(int k) {
-    return k == 0 ? TXT("The Sun") : k == 1 ? TXT("AB Doradus A") : k == 2 ? TXT("Proxima Centauri") : k == 3 ? TXT("Arcturus")
-         : k == 4 ? TXT("Betelgeuse") : k == 5 ? TXT("Altair") : k == 6 ? TXT("Rigel") : TXT("Sirius B");
-}
-ivec2 starClass(int k) {
-    return k == 0 ? TXT("G2 V") : k == 1 ? TXT("K0 V") : k == 2 ? TXT("M5.5 Ve") : k == 3 ? TXT("K1.5 III")
-         : k == 4 ? TXT("M1-2 Ia-ab") : k == 5 ? TXT("A7 V") : k == 6 ? TXT("B8 Ia") : TXT("DA2 white dwarf");
-}
-// Spectral class from temperature and gravity, for modified stars (dwarf temperature scale).
-void putClass(Star st) {
-    float T = st.T;
-    if (st.wd > 0.5) { putT(TXT("DA")); putInt(int(clamp(floor(50400.0 / T + 0.5), 1.0, 9.0))); putT(TXT(" white dwarf")); return; }
-    uint letter; float sub;
-    if (T > 31400.0) { letter = 79u; sub = 3.0 + 6.5 * (45000.0 - T) / 13600.0; }
-    else {
-        float hi = 31400.0, lo = 9700.0; letter = 66u;
-        if (T < 9700.0) { hi = 9700.0; lo = 7220.0; letter = 65u; }
-        if (T < 7220.0) { hi = 7220.0; lo = 5920.0; letter = 70u; }
-        if (T < 5920.0) { hi = 5920.0; lo = 5270.0; letter = 71u; }
-        if (T < 5270.0) { hi = 5270.0; lo = 3850.0; letter = 75u; }
-        if (T < 3850.0) { hi = 3850.0; lo = 2300.0; letter = 77u; }
-        sub = 10.0 * log(hi / T) / log(hi / lo);
-    }
-    put(letter); putInt(int(clamp(floor(sub), 0.0, 9.0)));
-    put(32u);
-    if (st.logL > 4.6) putT(TXT("I")); else if (st.logg < 3.6) putT(TXT("III")); else if (st.logg < 4.0) putT(TXT("IV")); else putT(TXT("V"));
-}
-// What the current combination of parameters means, in one line.
-ivec2 regime(Star s) {
-    if (s.wd > 0.5) return TXT("White dwarf: an Earth-sized remnant, radiative and unspotted");
-    if (s.conv < 0.5 && s.wind > 0.3) return TXT("Hot supergiant: starlight drives a fast, clumpy wind");
-    if (s.conv < 0.5 && s.omega > 0.5) return TXT("Near breakup: flattened, the poles hotter than the equator");
-    if (s.conv < 0.5) return TXT("Radiative envelope: no granulation, no spots, no dynamo");
-    if (s.giant > 0.5) return TXT("Supergiant: a few convection cells as big as the star");
-    if (s.logg < 3.5) return TXT("Giant: big granules, slow spin, magnetically quiet");
-    if (s.alpha > 0.9) return TXT("Saturated dynamo: polar spots, big flares, bright corona");
-    if (s.fullConv > 0.5) return TXT("Fully convective: strong dipole field, frequent flares");
-    if (s.alpha < 0.08) return TXT("Spun down: slow rotation has quenched the dynamo");
-    return TXT("Solar-type dynamo: spot cycle, active regions, coronal loops");
-}
 
 
 // Period or time in days, with sensible units.
@@ -192,39 +152,10 @@ void putTime(float d) {
     else if (d < 700.0) { putSig(d); putT(TXT(" d")); }
     else { putSig(d / 365.25); putT(TXT(" yr")); }
 }
-float composeLine(int L, Star st, vec2 res) {
-    vec4 ctrl = fetch(iChannel0, S_CTRL, 0), cam = fetch(iChannel0, S_CAM, 0), camT = fetch(iChannel0, S_CAMT, 0);
-    vec4 meta = fetch(iChannel0, S_META, 0);
-    int star = int(ctrl.x + 0.5);
-    bool modified = camT.w > 0.5;
-    float extra = 0.0;
+void composeLine(int L, Star st) {
+    vec4 ctrl = fetch(iChannel0, S_CTRL, 0), camT = fetch(iChannel0, S_CAMT, 0);
     str();
-    if (L == TL_TITLE) { putT(starTitle(star)); if (modified) put(42u); }
-    else if (L == TL_CLASS) { if (modified) putClass(st); else putT(starClass(star)); }
-    else if (L == TL_REGIME) putT(regime(st));
-    else if (L == TL_NUM1) {
-        putInt(int(st.T + 0.5)); putT(TXT(" K    R ")); putSig(st.R);
-        putT(TXT("    M ")); putSig(st.M); putT(TXT("    L ")); putSig(pow(10.0, st.logL));
-        putT(TXT("    log g ")); if (st.logg < 0.0) put(45u); putFix(abs(st.logg), 2);
-    }
-    else if (L == TL_NUM2) {
-        putT(TXT("P ")); putTime(st.P); putT(TXT("    v ")); putSig(st.veq); putT(TXT(" km/s"));
-        if (st.conv > 0.5) { putT(TXT("    Rossby ")); putSig(st.Ro); }
-        if (st.omega > 0.3) { putT(TXT("    Req/Rpol ")); putFix(st.eq, 2); }
-    }
-    else if (L == TL_VIEW) putT(ctrl.y > 0.5 ? TXT("Extreme UV  He II 30.4 nm, false colour") : TXT("Visible light, true colour"));
-    else if (L == TL_LAPSE) { if (ctrl.w > 0.5) putT(TXT("paused")); else { putT(TXT("1 s = ")); putTime(meta.w); } }
-    else if (L == TL_SCALE) {
-        // Scale bar: a round length near 90 virtual px. Its length goes out as extra.
-        float km = st.R * 695700.0 * 3.5 / (exp2(cam.z) * res.y) * uiScale(res);
-        float want = 90.0 * km, unit = 1.0; int kind = 0;
-        if (want > 3.0e7) { unit = 1.496e8; kind = 2; } else if (want > 3.0e5) { unit = 695700.0; kind = 1; }
-        float x = want / unit, e = pow(10.0, floor(log(x) / log(10.0))), f = x / e;
-        float nice = (f < 1.5 ? 1.0 : f < 3.5 ? 2.0 : f < 7.5 ? 5.0 : 10.0) * e;
-        extra = nice * unit / km;
-        putSig(nice); putT(kind == 2 ? TXT(" AU") : kind == 1 ? TXT(" Rsun") : TXT(" km"));
-    }
-    else if (L >= TL_STAR && L < TL_STAR + NSTARS) putT(starName(L - TL_STAR));
+    if (L >= TL_STAR && L < TL_STAR + NSTARS) putT(starName(L - TL_STAR));
     else if (L >= TL_SLAB && L < TL_SLAB + 4) { int k = L - TL_SLAB; putT(k == 0 ? TXT("Temperature") : k == 1 ? TXT("Radius") : k == 2 ? TXT("Rotation") : TXT("Cycle")); }
     else if (L >= TL_SVAL && L < TL_SVAL + 4) {
         int k = L - TL_SVAL;
@@ -233,7 +164,7 @@ float composeLine(int L, Star st, vec2 res) {
         else if (k == 2) putTime(st.P);
         else {
             float c = st.cycle;
-            if (st.alpha < 0.02) putT(TXT("no dynamo"));
+            if (st.alpha < 0.02) putT(TXT("none"));
             else putT(c < 0.15 || c > 0.88 ? TXT("minimum") : c < 0.32 ? TXT("rising") : c < 0.58 ? TXT("maximum") : TXT("declining"));
         }
     }
@@ -244,7 +175,6 @@ float composeLine(int L, Star st, vec2 res) {
     else if (L == TL_PAUSE) putT(ctrl.w > 0.5 ? TXT("Play") : TXT("Pause"));
     else if (L == TL_HIDE) putT(TXT("Hide"));
     else if (L == TL_SHOW) putT(TXT("Show"));
-    return extra;
 }
 
 void mainImage(out vec4 O, in vec2 P) {
@@ -284,8 +214,8 @@ void mainImage(out vec4 O, in vec2 P) {
     if (p.y == 6 || p.y == 7) {
         if (reset || (p.y == 6 && p.x >= 5 * NTL) || (p.y == 7 && p.x >= NTL)) return;
         int L = p.y == 6 ? p.x / 5 : p.x;
-        float extra = composeLine(L, loadStar(iChannel0), res);
-        if (p.y == 7) { O = vec4(float(SN), extra, 0, 0); return; }
+        composeLine(L, loadStar(iChannel0));
+        if (p.y == 7) { O = vec4(float(SN), 0, 0, 0); return; }
         int base = 12 * (p.x % 5);
         for (int c = 0; c < 4; c++) {
             uint v = 0u;

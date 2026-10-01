@@ -9,10 +9,9 @@ supergiant convection cells.
 
 **Stars:** Sun, AB Doradus A, Proxima Centauri, Arcturus, Betelgeuse, Altair, Rigel, Sirius B.
 
-![Sun, EUV](shots/sun-euv.png) ![Sun, EUV x2: plage fans and dark filament material](shots/sun-euv-zoom.png)
-![Sun, visible](shots/sun-visible.png) ![Betelgeuse](shots/betelgeuse.png)
-![Altair](shots/altair.png) ![AB Doradus, EUV](shots/abdor-euv.png)
-![Proxima, EUV](shots/proxima-euv.png) ![Rigel, EUV](shots/rigel-euv.png)
+![Sun, EUV](shots/sun-euv.png) ![Sun, EUV x2](shots/sun-euv-zoom.png)
+![Proxima, EUV](shots/proxima-euv.png) ![Sun, visible](shots/sun-visible.png)
+![Betelgeuse](shots/betelgeuse.png) ![Altair](shots/altair.png)
 
 ## Controls
 
@@ -24,7 +23,7 @@ supergiant convection cells.
 - **Pause**, **- x1 +** zoom (to x64, enough to resolve solar granulation), **Hide** the interface.
 - **Drag** anywhere else to orbit.
 
-The top-left line says, in words, what regime the current parameters put the star in.
+The only text is the bottom bar.
 
 ## What is modelled
 
@@ -48,9 +47,11 @@ The top-left line says, in words, what regime the current parameters put the sta
   sliders and the evolving regions.
 - **EUV**: chromospheric mottling, plage, flare ribbons, coronal holes over the dipole poles,
   a hydrostatic corona with a streamer belt (scale height ~ T_c R / M), a spicule-rough limb.
-  Loops rooted in plage glow as clumpy plasma; low closed loops rooted in quiet or decaying flux
-  hold cool, dense material that **absorbs** on the disc (filaments) and glows faintly past the
-  limb (prominences). Hot stars show radiatively driven, clumpy winds (beta law); Betelgeuse its
+  Loops rooted in plage glow as clumpy plasma, and plage itself glows in fans of threads along
+  the field. The surface field also places the cool chromospheric material: dark fibrils
+  stretched along its horizontal direction, and **filaments**, lumpy dark ribbons suspended over
+  polarity inversion lines away from plage, which absorb the disc and the low corona behind
+  them and show past the limb as prominences. Hot stars show radiatively driven, clumpy winds (beta law); Betelgeuse its
   extended ultraviolet chromosphere; a hot white dwarf its own photospheric EUV.
 - **Rotation**: Roche-model flattening and von Zeipel gravity darkening (beta 0.20 radiative,
   0.08 convective); Altair's poles come out ~1600 K hotter than its equator.
@@ -61,11 +62,11 @@ It is an appearance model driven by real scalings, not an MHD simulation.
 
 - **Common**: state layout, the stellar model, region struct, potential field, camera, UI layout.
 - **Buffer A** (iChannel0 = A): interface state, the derived model, active regions and field
-  sources, the Planck table, and every interface string (composed once per frame).
+  sources, the Planck table, and the bottom-bar strings (composed once per frame).
 - **Buffer B** (A, B): field lines, 64 nodes each, re-integrated every frame from the previous
-  frame's chunk starts, plus exact chunk bounding spheres and a hot/cool/closed classification.
+  frame's chunk starts, plus exact chunk bounding spheres and a closed/quiet classification.
 - **Buffer C** (A, B): a 256-bit line mask per 32 x 32 screen tile.
-- **Buffer D** (A, B, C): the star, atmosphere and lines in linear HDR.
+- **Buffer D** (A, B, C): the star, atmosphere, filaments and lines in linear HDR.
 - **Image** (D mipmapped, A, font `4dXGzr`): glare, hue-preserving tone mapping, interface.
 
 `node tools/build.mjs` writes `helios-star-lab.json` and `viewer.html` (with a stand-in font).
