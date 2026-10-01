@@ -19,7 +19,7 @@ supergiant convection cells.
 - **Temperature / Radius / Rotation / Cycle**: the orange tick marks the real star's value.
   Rotation is a fraction of breakup speed; the readout is the period that implies.
 - **Visible / EUV**: true colour, or He II 30.4 nm-style extreme ultraviolet (false colour; the default).
-- **Field**: overlay the traced field lines (warm: closed loops; magenta/blue: open field by polarity).
+- **Field** (on by default): the traced field lines as glowing strands, white-gold over active regions, magenta for the large-scale field.
 - **Pause**, **- x1 +** zoom (to x64, enough to resolve solar granulation), **Hide** the interface.
 - **Drag** anywhere else to orbit.
 

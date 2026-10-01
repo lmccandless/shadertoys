@@ -35,6 +35,20 @@ vec3 srgb(vec3 c) { return mix(c * 12.92, 1.055 * pow(c, vec3(1.0 / 2.4)) - 0.05
 
 void mainImage(out vec4 O, in vec2 P) {
     vec2 res = iResolution.xy, uv = P / res;
+    // Until Buffers A and D have produced a frame (passes compile asynchronously), show a calm
+    // placeholder sun at the same size and place instead of an empty, half-drawn interface.
+    bool ready = fetch(iChannel1, S_META, 0).x == VERSION && fetch(iChannel1, TL_SHOW, 7).x > 0.0
+              && textureLod(iChannel0, vec2(0.5), 0.0).a > 0.5;
+    if (!ready) {
+        vec2 q = (P - vec2(0.5 * res.x, 0.5 * res.y + 34.0 * uiScale(res))) / (0.5 * res.y / 1.75);
+        float r = length(q), mu = sqrt(max(1.0 - r * r, 0.0));
+        float disc = smoothstep(1.0 + 2.0 / res.y, 1.0 - 2.0 / res.y, r);
+        float glow = exp(-max(r - 1.0, 0.0) * 9.0) * 0.5 + exp(-max(r - 1.0, 0.0) * 2.5) * 0.12;
+        float e = disc * (0.55 + 0.45 * mu) + (1.0 - disc) * glow * (0.85 + 0.15 * sin(iTime * 2.0));
+        vec3 c = mix(vec3(0.45, 0.06, 0.0), vec3(1.0, 0.45, 0.06), e);
+        O = vec4(srgb(0.6 * c * e), 1);
+        return;
+    }
     vec4 ctrl0 = fetch(iChannel1, S_CTRL, 0);
     vec3 sc = textureLod(iChannel0, uv, 0.0).rgb;
     vec3 glare = 0.30 * textureLod(iChannel0, uv, 2.5).rgb + 0.35 * textureLod(iChannel0, uv, 4.5).rgb + 0.35 * textureLod(iChannel0, uv, 6.5).rgb;

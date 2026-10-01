@@ -7,13 +7,12 @@
 // at most 8 nodes of integration per texel. Bounds integrate their chunk from the same starts,
 // so they always enclose this frame's nodes exactly.
 
-vec4 SRC[2 * NREG];
-int NSRC;
 vec3 DIP;
 
+// Sources are read from Buffer A inside the loop: no local array, which D3D compiles slowly.
 vec3 field(vec3 p) {
     vec3 B = dipoleField(p, DIP);
-    for (int i = 0; i < NSRC + ZERO; i++) B += sourceField(p, SRC[i]);
+    for (int i = 0; i < 2 * NREG + ZERO; i++) { vec4 q = fetch(iChannel0, i, 2); if (q.w != 0.0) B += sourceField(p, q); }
     return B;
 }
 
@@ -36,7 +35,7 @@ vec4 seed(int i, out float energy, out float kind) {
     vec3 p = vec3(cos(az) * sqrt(1.0 - y * y), y, sin(az) * sqrt(1.0 - y * y)) * 1.002;
     vec3 B = field(p);
     float br = dot(B, normalize(p));
-    energy = NSRC > 0 || dot(DIP, DIP) > 0.0 ? 0.35 * smoothstep(0.0, 0.05, abs(br)) : 0.0; kind = 1.0;
+    energy = 0.35 * smoothstep(0.0, 0.05, abs(br)); kind = 1.0;
     return vec4(p, br >= 0.0 ? 1.0 : -1.0);
 }
 
@@ -78,8 +77,6 @@ void mainImage(out vec4 O, in vec2 P) {
     O = vec4(0);
     if (idx >= NLINES * STRIDE) return;
     int line = idx / STRIDE, slot = idx % STRIDE;
-    NSRC = 0;
-    for (int i = 0; i < 2 * NREG + ZERO; i++) { vec4 s = fetch(iChannel0, i, 2); if (s.w != 0.0) { SRC[NSRC] = s; NSRC++; } }
     DIP = fetch(iChannel0, S_MODEL + 5, 0).xyz;
     float energy, kind;
     vec4 s0 = seed(line, energy, kind);

@@ -114,12 +114,20 @@ Region makeRegion(Star s, int k, float days, float flareClock) {
 // 12 chars per line (3 chars per channel), row 7 the lengths. Image only looks characters up.
 /*TEXT_DATA*/
 
-// One string at a time is composed into a global scratch buffer (no array copies).
-uint SW[16]; int SN;
-void str() { for (int i = 0; i < 16 + ZERO; i++) SW[i] = 0u; SN = 0; }
+// A string is composed by counting characters; only the 12 this texel stores (from QB) are
+// kept, 3 per channel. No array: indexable arrays make D3D compiles slow.
+uvec4 SW; int SN, QB;
+void str() { SW = uvec4(0); SN = 0; }
 // The table is decoded once, on the reset frame, into rows 8+ (one char per channel).
 uint textChar(ivec2 t, int i) { int j = t.x + i, x = j >> 2; vec4 v = fetch(iChannel0, x % 256, 8 + x / 256); int c = j & 3; return uint(c == 0 ? v.x : c == 1 ? v.y : c == 2 ? v.z : v.w); }
-void put(uint c) { if (SN < 60) { SW[SN >> 2] |= c << uint(8 * (SN & 3)); SN++; } }
+void put(uint c) {
+    int j = SN - QB;
+    if (j >= 0 && j < 12) {
+        uint v = c << uint(8 * (j % 3));
+        if (j < 3) SW.x |= v; else if (j < 6) SW.y |= v; else if (j < 9) SW.z |= v; else SW.w |= v;
+    }
+    SN++;
+}
 void putT(ivec2 t) { for (int i = 0; i < t.y + ZERO; i++) put(textChar(t, i)); }
 void putInt(int v) {
     int d = 1;
@@ -214,14 +222,9 @@ void mainImage(out vec4 O, in vec2 P) {
     if (p.y == 6 || p.y == 7) {
         if (reset || (p.y == 6 && p.x >= 5 * NTL) || (p.y == 7 && p.x >= NTL)) return;
         int L = p.y == 6 ? p.x / 5 : p.x;
+        QB = p.y == 6 ? 12 * (p.x % 5) : 1000;
         composeLine(L, loadStar(iChannel0));
-        if (p.y == 7) { O = vec4(float(SN), 0, 0, 0); return; }
-        int base = 12 * (p.x % 5);
-        for (int c = 0; c < 4 + ZERO; c++) {
-            uint v = 0u;
-            for (int b = 0; b < 3 + ZERO; b++) { int i = base + 3 * c + b; v |= ((SW[i >> 2] >> uint(8 * (i & 3))) & 255u) << uint(8 * b); }
-            O[c] = float(v);
-        }
+        O = p.y == 7 ? vec4(float(SN), 0, 0, 0) : vec4(SW);
         return;
     }
     if (p.y != 0 || p.x > 15) return;
@@ -229,7 +232,7 @@ void mainImage(out vec4 O, in vec2 P) {
     // ---- state update (every row-0 texel runs it and keeps its own part) ----
     vec4 ctrl, slide, eased, cam, camT, mouse, clock;
     if (reset) {
-        ctrl = vec4(0, 1, 0, 0); slide = presetSliders(0); eased = slide;
+        ctrl = vec4(0, 1, 1, 0); slide = presetSliders(0); eased = slide;
         cam = vec4(0.35, 0.16, 0, 0); camT = cam; mouse = vec4(0, 0, 0, -1); clock = vec4(0);
         meta = vec4(VERSION, 1.0, 1.0, presetPeriod(0) / 45.0);
     } else {

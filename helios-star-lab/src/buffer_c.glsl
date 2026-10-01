@@ -16,7 +16,7 @@ void mainImage(out vec4 O, in vec2 P) {
     int idx = int(P.y) * int(res.x) + int(P.x), tile = idx / 4, group = idx % 4;
     if (tile >= tx * ty) return;
     vec4 ctrl = fetch(iChannel0, S_CTRL, 0);
-    if (ctrl.y < 0.5 && ctrl.z < 0.5) return;            // no lines drawn in this view
+    if (ctrl.z < 0.5) return;                            // field lines are off
     Star s = loadStar(iChannel0);
     vec3 ax = starAxes(s);
     float axm = max(ax.x, ax.y);

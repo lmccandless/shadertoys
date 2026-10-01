@@ -6,13 +6,13 @@
 // (grey Eddington atmosphere, T^4 = 3/4 Teff^4 (tau + 2/3)). Limb darkening and limb
 // reddening follow from that alone, so they differ correctly between a red supergiant and a
 // white dwarf. Disc centre is normalised to 1 for every star; colour is not.
-// EUV: optically thin emission (chromospheric network, plage, flares, corona, loops, winds),
+// EUV: optically thin emission (chromospheric network, plage, flares, corona, winds),
 // displayed log-scaled in a He II 30.4 nm style false-colour palette.
 
+// No arrays: indexable local arrays are what make D3D compiles slow. Regions and field sources
+// are read straight from Buffer A where they are needed.
 Star S; vec4 CTRL, CLOCK; vec3 AX;
-vec3 RN[NREG]; float RE[NREG];
-vec4 SRC[2 * NREG]; int NSRC;
-float FIL, FAN = 0.5;                                // filament opacity along this pixel
+float FIL;                                          // filament opacity along this pixel
 
 // ---- Chromospheric material held by the field -------------------------------------------------
 // The surface field gives two things the EUV disc needs. Its horizontal direction: chromospheric
@@ -21,7 +21,7 @@ float FIL, FAN = 0.5;                                // filament opacity along t
 // them, away from plage; past the limb the same material shows as prominences.
 vec3 surfaceField(vec3 n) {
     vec3 p = n * 1.008, B = dipoleField(p, S.dipole);
-    for (int i = 0; i < NSRC + ZERO; i++) B += sourceField(p, SRC[i]);
+    for (int i = 0; i < 2 * NREG + ZERO; i++) { vec4 q = fetch(iChannel0, i, 2); if (q.w != 0.0) B += sourceField(p, q); }
     return B;
 }
 float filament(vec3 n, out vec3 t, out float horiz) {
@@ -30,12 +30,12 @@ float filament(vec3 n, out vec3 t, out float horiz) {
     float br = dot(B, n), bm = length(B) + 1e-6;
     vec3 bt = B - br * n; t = bt / max(length(bt), 1e-6);
     float act = 0.0;
-    for (int k = 0; k < NREG + ZERO; k++) if (RE[k] > 0.0) act += RE[k] * exp(-(1.0 - dot(n, RN[k])) / 0.012);
+    for (int k = 0; k < NREG + ZERO; k++) { float e = fetch(iChannel0, k, 5).x; if (e > 0.0) act += e * exp(-(1.0 - dot(n, fetch(iChannel0, k, 3).xyz)) / 0.012); }
     float wob = 0.6 + 0.8 * vnoise(n * 30.0);
     float q = sq(br / bm);
     float pil = exp(-q / (0.006 * wob)) + 0.25 * exp(-q / 0.05);    // ribbon plus its channel
     float seg = smoothstep(0.42, 0.62, vnoise(n * 4.5 + 11.3));        // only some stretches erupt into view
-    return pil * seg * (1.0 - sat(3.0 * act)) * smoothstep(0.0, 0.02, length(S.dipole) + float(NSRC) * 0.01);
+    return pil * seg * (1.0 - sat(3.0 * act));
 }
 float streaks(vec3 n, vec3 t, float scale, float fp) {
     float a = 0.0;
@@ -93,8 +93,8 @@ vec3 surface(vec3 s, float mu, float fp, bool euv) {
     T *= 1.0 + S.cgran * gr * (1.0 - 0.7 * S.giant) + 0.07 * S.giant * gc;
     float umbra = 0.0, pen = 0.0, plage = 0.0, flare = 0.0;
     for (int k = 0; k < NREG + ZERO; k++) {
-        if (RE[k] <= 0.0) continue;
         Region g = loadRegion(iChannel0, k);
+        if (g.e <= 0.0) continue;
         float reach = g.a + 4.0 * g.w + 0.04;
         if (dot(s, g.n) < 1.0 - 0.5 * reach * reach) continue;
         vec3 d = s - g.n;
@@ -110,7 +110,7 @@ vec3 surface(vec3 s, float mu, float fp, bool euv) {
         fil = mix(0.5, fil, 1.0 - smoothstep(0.3, 1.0, fp * 70.0 / max(rl, 1e-3)));
         umbra = max(umbra, um); pen = max(pen, pn * (0.75 + 0.5 * fil));
         float ex = 1.2 * g.a + 2.6 * g.w, ey = 1.8 * g.w + 0.6 * g.a;
-        plage += sqrt(RE[k]) * exp(-1.6 * (x * x / (ex * ex) + y * y / (ey * ey)));
+        plage += sqrt(g.e) * exp(-1.6 * (x * x / (ex * ex) + y * y / (ey * ey)));
         float rib = exp(-sq((abs(x) - 0.22 * g.a) / (0.07 * g.a + 0.003))) * exp(-sq(y / (1.3 * g.w + 0.004)));
         flare += g.flare * rib;
     }
@@ -141,7 +141,6 @@ vec3 surface(vec3 s, float mu, float fp, bool euv) {
     if (S.alpha > 0.0) {
         vec3 t; float horiz; float fil = filament(s, t, horiz);
         float fib = streaks(s, t, 70.0, fp), thr = streaks(s, t, 260.0, fp);
-        FAN = streaks(s, t, 330.0, fp);
         // Dark fibrils everywhere the field lies flat, densest around plage; filaments on top.
         E *= 1.0 - 0.6 * smoothstep(0.5, 0.36, fib) * horiz * (0.25 + sat(2.0 * plage));
         float lumps = smoothstep(0.25, 0.7, vnoise(s * 55.0 + 3.0 * t));
@@ -149,7 +148,7 @@ vec3 surface(vec3 s, float mu, float fp, bool euv) {
     }
     E += S.chromo * 0.5 * (0.6 + 0.8 * fbm(s * 4.0 + CLOCK.z * 0.01, fp * 4.0, 3));
     // Plage glows in fans of fine threads that follow the field out of each polarity.
-    float fan = plage > 0.02 ? 0.35 + 1.5 * smoothstep(0.35, 0.75, FAN) : 1.0;
+    float fan = 1.0;
     E += (2.4 * plage + 1.2 * sq(plage)) * filigree * fan * (1.0 - 0.6 * umbra) + 5.0 * flare;
     E *= 1.0 + 0.8 * sq(1.0 - mu);
     E += 2.0 * exp(-473289.0 * (1.0 / T - 1.0 / 25000.0)) + 0.035;
@@ -158,7 +157,7 @@ vec3 surface(vec3 s, float mu, float fp, bool euv) {
 
 // ---- Optically thin atmosphere --------------------------------------------------------------
 // EUV: hydrostatic corona (scale height ~ T_c R / M) shaped by the helmet-streamer belt over the
-// dipole's magnetic equator, coronal holes, active-region halos and radial rays; radiatively
+// dipole's magnetic equator, coronal holes and radial rays; radiatively
 // driven clumpy winds (beta-law, density ~ 1/(r^2 v)); extended supergiant chromospheres.
 // Visible: the molecular layer of red supergiants (absorbs the disc edge, emits dim red).
 vec2 atmosphere(vec3 ro, vec3 rd, float tEnd, bool euv) {
@@ -179,24 +178,14 @@ vec2 atmosphere(vec3 ro, vec3 rd, float tEnd, bool euv) {
             if (S.alpha > 0.0) {
                 float dens = exp(-(1.0 / H) * (1.0 - 1.0 / r));
                 float md = dot(n, m), belt = exp(-md * md / (0.10 / (1.0 + 1.5 * hh)));
-                float ar = 0.0;
-                for (int k = 0; k < NREG + ZERO; k++) if (RE[k] > 0.0) ar += RE[k] * exp(-(1.0 - dot(n, RN[k])) / (0.004 + 0.03 * hh));
                 float rays = vnoise(n * 38.0) * 0.7 + vnoise(n * 11.0) * 0.6;
                 float hole = smoothstep(0.65, 0.9, abs(md)) * (0.35 + 0.65 * abs(cos(PI * S.cycle)));
-                E += dens * dens * (0.3 + 1.6 * belt + 2.5 * ar) * (0.4 + rays) * (1.0 - 0.7 * hole) * (0.35 + 0.5 * S.alpha) * 1.3;
+                E += dens * dens * (0.3 + 1.6 * belt) * (0.4 + rays) * (1.0 - 0.7 * hole) * (0.35 + 0.5 * S.alpha) * 1.3;
             }
             if (S.wind > 0.0) {
                 float v = 0.02 + pow(max(1.0 - 0.98 / r, 0.0), 1.0), rho = min(1.0 / (r * r * v), 25.0);
                 float cl = vnoise(vec3(n * 16.0) + vec3(0.0, 0.0, 5.0 * (r - CLOCK.w * 0.12)));
                 E += S.wind * 0.05 * pow(rho, 1.5) * (0.2 + 3.0 * cl * cl * cl);
-            }
-            if (S.alpha > 0.0 && tEnd < 0.0 && hh < 0.09) {
-                // Prominence: the filament seen edge-on, clumpy vertical threads.
-                vec3 tt; float hz; float fil = filament(n, tt, hz);
-                if (fil > 0.01) {
-                    float thr = vnoise(vec3(n * 240.0) + vec3(0.0, hh * 25.0, 0.0)) * vnoise(n * 70.0 + vec3(hh * 12.0));
-                    E += 30.0 * smoothstep(0.1, 0.5, fil) * exp(-hh / 0.035) * smoothstep(0.0, 0.006, hh) * (0.15 + 2.0 * thr * thr);
-                }
             }
             if (S.conv > 0.0 && hh < 0.03) {
                 float sp = vnoise(vec3(n * 260.0)) * vnoise(vec3(n * 90.0) + 3.1);
@@ -220,11 +209,17 @@ vec4 node(int line, int slot) {
     int j = line * STRIDE + slot, w = int(iResolution.x);
     return texelFetch(iChannel1, ivec2(j % w, j / w), 0);
 }
-// Overlay: thin lines (closed loops warm, open field by polarity). EUV: emitting loops.
-// EUV: loops rooted in plage glow as clumpy condensations, not uniform strings. Low loops over
-// quiet or decayed flux are skipped: their cool material is drawn from the surface field instead.
-void fieldLines(vec3 ro, vec3 rd, float tEnd, float fp, vec2 px, bool euv, bool overlay, out vec4 ov, out float uv, out vec2 cool) {
-    ov = vec4(0); uv = 0.0; cool = vec2(0);
+vec3 fireColor(float heat) {
+    heat = sat(heat);
+    vec3 c = mix(vec3(1, 0.004, 0.0003), vec3(1, 0.100, 0.0015), smoothstep(0.08, 0.60, heat));
+    c = mix(c, vec3(1, 0.72, 0.035), smoothstep(0.57, 0.95, heat));
+    return mix(c, vec3(1, 0.98, 0.61), smoothstep(0.93, 1.0, heat));
+}
+// Field lines as thin glowing strands with bright packets running along them: white-gold over
+// active regions, magenta for the large-scale field. Each segment's Gaussian tube is integrated
+// along its projection, so joints add up exactly and sub-pixel strands keep their brightness.
+vec3 fieldLines(vec3 ro, vec3 rd, float tEnd, float fp, vec2 px) {
+    vec3 sum = vec3(0);
     vec2 res = iResolution.xy;
     int tx = (int(res.x) + TILE - 1) / TILE, tile = int(px.x) / TILE + (int(px.y) / TILE) * tx;
     float lim = tEnd > 0.0 ? tEnd : 1e5;
@@ -237,14 +232,14 @@ void fieldLines(vec3 ro, vec3 rd, float tEnd, float fp, vec2 px, bool euv, bool 
                 int bit = int(log2(float(bits & (~bits + 1u))) + 0.5); bits &= bits - 1u;
                 int line = g * 64 + ch * 16 + bit;
                 vec4 meta = node(line, STRIDE - 1);
-                bool closed = meta.z > 0.5, cold = meta.w > 0.5;
-                vec3 tint = closed ? vec3(1.0, 0.80, 0.52) : (meta.y > 0.0 ? vec3(1.0, 0.32, 0.62) : vec3(0.30, 0.68, 1.0));
-                float ebase = meta.x * (closed ? 1.0 : 0.30), eeuv = sqrt(meta.x) * (closed ? 2.2 : 0.04);
+                bool region = line < 12 * NREG;
+                float seed = hash13(vec3(float(line), 9.37, 1.0));
+                float gain = region ? 6.0 * min(meta.x, 1.5) + 1.5 : 2.2;
                 for (int c = 0; c < 8 + ZERO; c++) {
                     vec4 bd = node(line, NODES + c);
                     if (bd.w < 0.0) break;
                     vec3 v = bd.xyz - ro; float tc = dot(v, rd);
-                    float pad = bd.w + 0.02 + 3.0 * tc * fp;
+                    float pad = bd.w + 0.01 + 3.0 * tc * fp;
                     if (dot(v, v) - tc * tc > pad * pad || tc + bd.w < 0.0 || tc - bd.w > lim) continue;
                     vec4 a = node(line, 8 * c);
                     int last = c == 7 ? 7 : 8;
@@ -252,39 +247,24 @@ void fieldLines(vec3 ro, vec3 rd, float tEnd, float fp, vec2 px, bool euv, bool 
                         vec4 b = node(line, 8 * c + q);
                         vec3 ab = b.xyz - a.xyz;
                         float ta = dot(a.xyz - ro, rd), tb = dot(b.xyz - ro, rd);
-                        vec3 pa = a.xyz - ro - rd * ta, v = ab - rd * (tb - ta);
-                        float vv = dot(v, v);
-                        if (vv > 1e-12 && max(ta, tb) > 0.0) {
-                            // Gaussian tube integrated along the projected segment: joints add up exactly.
-                            float u = -dot(pa, v) / vv, d2 = max(dot(pa, pa) - u * u * vv, 0.0);
+                        vec3 pa = a.xyz - ro - rd * ta, vp = ab - rd * (tb - ta);
+                        float vv = dot(vp, vp);
+                        if (vv > 1e-12) {
+                            float u = -dot(pa, vp) / vv, d2 = max(dot(pa, pa) - u * u * vv, 0.0);
                             float uc = clamp(u, 0.0, 1.0), t = mix(ta, tb, uc);
-                            float r = length(a.xyz + ab * uc), hh = r - 1.0, arc = mix(a.w, b.w, uc);
-                            float spx = 0.6 * t * fp;
-                            if (t < lim) {
-                                if (overlay) {
-                                    float so = max(spx, 0.0006), kk = sqrt(vv) / (1.4142 * so);
-                                    vec2 er = erfa(vec2(1.0 - u, -u) * kk);
-                                    float cov = exp(-0.5 * d2 / (so * so)) * 0.5 * (er.x - er.y)
-                                              * smoothstep(3.3, 2.0, r) * min(1.0, 0.3 + 2.0 * meta.x);
-                                    ov.rgb += tint * cov; ov.a += cov;
-                                }
-                                if (euv) {
-                                    vec3 cp = mix(a.xyz, b.xyz, uc);
-                                    float sw = cold ? 0.006 + 0.004 * hh : (0.009 + 0.02 * hh) * (closed ? 1.0 : 2.5);
-                                    float sg = sqrt(sw * sw + spx * spx), kk = sqrt(vv) / (1.4142 * sg);
-                                    vec2 er = erfa(vec2(1.0 - u, -u) * kk);
-                                    float prof = exp(-0.5 * d2 / (sg * sg)) * 0.5 * (er.x - er.y) * (sw / sg);
-                                    vec3 fl = cp * 28.0 + float(line) * 1.7 + vec3(0.0, 0.0, CLOCK.w * 0.25);
-                                    float blob = (0.3 + 0.7 * smoothstep(0.2, 0.8, vnoise(fl))) * (0.5 + 0.8 * vnoise(cp * 110.0 - CLOCK.w * 0.3));
-                                    blob = mix(blob, 0.75, smoothstep(0.08, 0.35, hh));
-                                    if (!cold) {
-                                        // Diffuse clumpy plasma plus a faint fibril core.
-                                        float sc = sqrt(0.0016 * 0.0016 + spx * spx), kc = sqrt(vv) / (1.4142 * sc);
-                                        vec2 ec = erfa(vec2(1.0 - u, -u) * kc);
-                                        float core = exp(-0.5 * d2 / (sc * sc)) * 0.5 * (ec.x - ec.y) * (0.0016 / sc);
-                                        uv += eeuv * (prof * blob * blob * 1.5 + core * blob * 0.5) * (exp(-hh / 0.12) + 0.3 * exp(-hh / 0.5));
-                                    }
-                                }
+                            float r = length(a.xyz + ab * uc), hh = max(r - 1.0, 0.0), arc = mix(a.w, b.w, uc);
+                            float wdt = (0.0012 + 0.0010 * seed) * (1.0 + 0.85 * hh) * (region ? 1.0 : 0.85);
+                            float sg2 = wdt * wdt + sq(0.53 * t * fp);
+                            if (t > 0.0 && t < lim && d2 < 18.0 * sg2) {
+                                vec2 er = erfa(vec2(1.0 - u, -u) * sqrt(vv / (2.0 * sg2)));
+                                float cov = exp(-0.5 * d2 / sg2) * 0.5 * (er.x - er.y) * wdt * inversesqrt(sg2);
+                                float clk = CLOCK.w * (1.2 + 0.6 * seed), ph = arc * (18.0 + 15.0 * seed);
+                                float pulse = pow(0.5 + 0.5 * sin(ph - clk + seed * 42.0), 8.0);
+                                float back = pow(0.5 + 0.5 * sin(ph * 0.71 + clk * 0.81 + seed * 17.0), 12.0);
+                                float env = exp(-hh * 2.0) * (1.0 - smoothstep(2.6, 3.4, r));
+                                float heat = 0.60 + 0.17 * sin(arc * 12.0 - CLOCK.w * 1.7 + seed * 30.0) + 0.13 * exp(-hh * 15.0);
+                                vec3 tint = region ? fireColor(heat) : mix(vec3(0.95, 0.30, 0.70), fireColor(heat), 0.25);
+                                sum += tint * cov * env * gain * (0.35 + 1.4 * pulse + 0.5 * back);
                             }
                         }
                         a = b;
@@ -293,14 +273,12 @@ void fieldLines(vec3 ro, vec3 rd, float tEnd, float fp, vec2 px, bool euv, bool 
             }
         }
     }
+    return sum;
 }
 
 void mainImage(out vec4 O, in vec2 P) {
     vec2 res = iResolution.xy;
     S = loadStar(iChannel0); CTRL = fetch(iChannel0, S_CTRL, 0); CLOCK = fetch(iChannel0, S_CLOCK, 0); AX = starAxes(S);
-    for (int k = 0; k < NREG + ZERO; k++) { RN[k] = fetch(iChannel0, k, 3).xyz; RE[k] = fetch(iChannel0, k, 5).x; }
-    NSRC = 0;
-    for (int i = 0; i < 2 * NREG + ZERO; i++) { vec4 q = fetch(iChannel0, i, 2); if (q.w != 0.0) { SRC[NSRC] = q; NSRC++; } }
     bool euv = CTRL.y > 0.5, overlay = CTRL.z > 0.5;
     Cam k = starCam(makeCam(fetch(iChannel0, S_CAM, 0), res), CLOCK.y);
     vec3 rdw = camRay(k, P);
@@ -321,16 +299,14 @@ void mainImage(out vec4 O, in vec2 P) {
         if (euv) E += sc.x * cover; else col = sc * cover;
     }
     vec2 at = atmosphere(ro, rd, tS, euv);
-    vec4 ov = vec4(0); float lu = 0.0; vec2 cl = vec2(0);
-    if (euv || overlay) fieldLines(ro, rd, tS, fp / L, P, euv, overlay, ov, lu, cl);
     if (euv) {
         // Filaments sit in the low corona: they absorb the disc and the corona behind them.
-        E = (E + at.x + lu) * (1.0 - FIL * cover);
+        E = (E + at.x) * (1.0 - FIL * cover);
         col = palette304(log(1.0 + 2.2 * E) / log(1.0 + 2.2 * 2.5));
     } else {
         vec4 mol = planck(iChannel0, S.T * 0.6), ref = planck(iChannel0, S.T * 1.0574);
         col = col * exp(-at.y) + at.x * exp(mol.w - ref.w) * mol.rgb * 6.0;
     }
-    if (overlay) col = mix(col, ov.rgb / max(ov.a, 1e-4), sat(ov.a) * 0.85);
+    if (overlay) col += fieldLines(ro, rd, tS, fp / L, P) * (euv ? 1.0 : 2.2);
     O = vec4(max(col, 0.0), 1.0);
 }
